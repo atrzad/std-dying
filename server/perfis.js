@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
+import { temaPorId } from './temas.js';
 
 const NADA = { descricao: 'sem acesso', tema: 'normal', progresso: 'banco', trilhas: [] };
 let PERFIS = { completo: { descricao: 'Tudo', tema: 'pixel', progresso: 'arquivo', trilhas: '*' } };
@@ -19,7 +20,8 @@ export function carregarPerfis() {
 export const perfilDe = (usuario) => PERFIS[usuario?.perfil] || NADA;
 export const nomesPerfis = () => Object.entries(PERFIS).map(([chave, p]) => ({ chave, descricao: p.descricao || chave }));
 // A escolha da própria pessoa (configurações) vale mais que o padrão do perfil.
-export const temaDe = (usuario) => ((usuario?.temaEscolhido || perfilDe(usuario).tema) === 'pixel' ? 'pixel' : 'normal');
+export const temaIdDe = (usuario) => temaPorId(usuario?.temaEscolhido || perfilDe(usuario).tema).id;
+export const temaDe = (usuario) => temaPorId(temaIdDe(usuario)).base;
 export const PERFIL_CONTA_NOVA = 'pessoal';
 export const gravaNasNotas = (usuario) => perfilDe(usuario).progresso === 'arquivo';
 

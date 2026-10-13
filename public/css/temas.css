@@ -1,0 +1,87 @@
+/* Paletas do tema pixel. O layout é o mesmo de ayo.css; cada paleta só troca as variáveis de cor.
+   A Fogueira (padrão) é o :root de ayo.css. As cores de cada trilha (.t-*) continuam as mesmas em todas.
+   Este arquivo também é carregado no tema normal, só para as amostras da página de configurações. */
+
+/* Abismo: o mais escuro. Preto puro (bom em tela OLED e para estudar de madrugada), prata fria e chama violeta. */
+.paleta-abismo {
+  --bg: #000000; --pedra: #040405; --painel: #08080b; --painel-2: #0e0e13; --painel-3: #15151c; --sombra: #000000;
+  --bronze: #2a2838; --bronze-claro: #5b5675; --ouro: #8f88b5; --ouro-claro: #cdc7ee;
+  --osso: #dcd9e6; --pergaminho: #a9a5b8; --apagado: #827e96; --cinza: #5f5c73;
+  --brasa: #8670f0; --brasa-clara: #b9a8ff; --brasa-fundo: #150f2b; --sangue: #b3243a; --alma: #b9c4ff;
+  --poco: #030304; --escuro: #060609; --cabeca: #0b0b10; --traco: #17161e; --borda: #24222f;
+  --btn-a: #2a2445; --btn-b: #171329; --foco-a: #120d24; --foco-b: #09071a;
+}
+
+/* Névoa: cidade coberta de neblina. Cinzas quentes, ferrugem e vermelho seco. */
+.paleta-nevoa {
+  --bg: #161615; --pedra: #1c1c1b; --painel: #222120; --painel-2: #2a2927; --painel-3: #34322f; --sombra: #0a0a0a;
+  --bronze: #5e4a3c; --bronze-claro: #8a7a6c; --ouro: #b8ae9c; --ouro-claro: #e3dccd;
+  --osso: #ecebe7; --pergaminho: #c9c6bf; --apagado: #9a968e; --cinza: #6c6964;
+  --brasa: #c95c3a; --brasa-clara: #e8a58e; --brasa-fundo: #2a1610; --sangue: #a32020; --alma: #cfd8dc;
+  --poco: #121211; --escuro: #1a1918; --cabeca: #252422; --traco: #2e2d2b; --borda: #3d3a36;
+  --btn-a: #4a3a2f; --btn-b: #2e241d; --foco-a: #2a1a14; --foco-b: #1a110d;
+}
+body.paleta-nevoa { --luz-fundo: rgba(225, 225, 218, .10); }
+
+/* Fósforo: tela de osciloscópio. Verde de fósforo sobre preto, com linhas de varredura. */
+.paleta-fosforo {
+  --bg: #010804; --pedra: #021009; --painel: #03140b; --painel-2: #051c10; --painel-3: #082616; --sombra: #000000;
+  --bronze: #10502a; --bronze-claro: #2c8a50; --ouro: #3fdc7a; --ouro-claro: #a8ffc4;
+  --osso: #d4ffe0; --pergaminho: #8fe3aa; --apagado: #55a873; --cinza: #2f6a45;
+  --brasa: #39ff88; --brasa-clara: #b6ffd2; --brasa-fundo: #062a14; --sangue: #ff5a4e; --alma: #7cf7e4;
+  --bom: #8dff6a; --aviso: #e8ff6a;
+  --poco: #010a05; --escuro: #02100a; --cabeca: #04180d; --traco: #0b2a17; --borda: #0f3a20;
+  --btn-a: #0b4a24; --btn-b: #052a14; --foco-a: #06301a; --foco-b: #031a0e;
+}
+body.paleta-fosforo { --luz-fundo: rgba(57, 255, 136, .08); }
+body.paleta-fosforo::after {
+  content: ""; position: fixed; inset: 0; z-index: 200; pointer-events: none;
+  background: repeating-linear-gradient(180deg, rgba(0, 0, 0, .22) 0 1px, transparent 1px 3px);
+}
+
+/* Megaestrutura: concreto sem fim, luz branca e fria, sinais em ciano. */
+.paleta-mega {
+  --bg: #0a0b0c; --pedra: #0f1112; --painel: #141618; --painel-2: #1a1d20; --painel-3: #22262a; --sombra: #030405;
+  --bronze: #3c4247; --bronze-claro: #6f7a81; --ouro: #a9b6bd; --ouro-claro: #e6eef2;
+  --osso: #eef2f4; --pergaminho: #c3cbd0; --apagado: #8b959c; --cinza: #5b6369;
+  --brasa: #5ad1e6; --brasa-clara: #b5f0fa; --brasa-fundo: #0b2128; --sangue: #d6453d; --alma: #9fe8f5;
+  --poco: #08090a; --escuro: #0e1012; --cabeca: #181b1e; --traco: #1f2326; --borda: #2c3236;
+  --btn-a: #2a3a40; --btn-b: #172227; --foco-a: #0f262c; --foco-b: #0a171b;
+}
+body.paleta-mega { --luz-fundo: rgba(230, 240, 245, .07); }
+
+/* Profundezas: mar escuro à noite, só a lanterna do barco acesa. */
+.paleta-profundezas {
+  --bg: #020c0d; --pedra: #041314; --painel: #071a1b; --painel-2: #0b2324; --painel-3: #102e2f; --sombra: #000506;
+  --bronze: #2b5650; --bronze-claro: #5f8a83; --ouro: #d6b061; --ouro-claro: #f5dc9f;
+  --osso: #e4efe8; --pergaminho: #b5cbc3; --apagado: #7f9d94; --cinza: #4a6862;
+  --brasa: #e8a838; --brasa-clara: #ffd88a; --brasa-fundo: #2a1f08; --sangue: #c0443a; --alma: #7fe0d0;
+  --poco: #020f10; --escuro: #051617; --cabeca: #0a2223; --traco: #10292a; --borda: #183a39;
+  --btn-a: #4a3d1c; --btn-b: #2a220f; --foco-a: #2a2008; --foco-b: #161105;
+}
+
+/* Unidade 01: roxo e verde de máquina de combate, laranja de alerta. */
+.paleta-unidade {
+  --bg: #0c0812; --pedra: #120c1a; --painel: #181022; --painel-2: #20162d; --painel-3: #2b1e3b; --sombra: #050308;
+  --bronze: #4e3373; --bronze-claro: #7c5ea6; --ouro: #8fd14f; --ouro-claro: #cdf59a;
+  --osso: #efe8f7; --pergaminho: #c9bedb; --apagado: #9488a8; --cinza: #5f5470;
+  --brasa: #ff7a1a; --brasa-clara: #ffbd85; --brasa-fundo: #2d1406; --sangue: #e0303a; --alma: #8fd14f;
+  --poco: #0a0710; --escuro: #110b19; --cabeca: #1b1226; --traco: #241a31; --borda: #352647;
+  --btn-a: #3a2a55; --btn-b: #22173a; --foco-a: #2a1736; --foco-b: #170d20;
+}
+
+/* Fora das trilhas (início, conta, foco sem trilha) o destaque segue a chama do tema; cada trilha mantém a sua cor. */
+body[class*="paleta-"], body[class*="paleta-"] .t-inicio { --tc: var(--brasa); --tc-claro: var(--brasa-clara); --tc-fundo: var(--brasa-fundo); }
+
+/* ---------- amostras na página de configurações (funcionam nos dois temas) ---------- */
+.paleta-pixel { --bg: #0d0b0a; --painel-3: #33291f; --ouro: #c9a45c; --brasa: #e2722b; }
+.paleta-normal { --bg: #f6f5f2; --painel-3: #dcd9d2; --ouro: #2f6fd6; --brasa: #1c1c1f; }
+.tema-cores { font-style: normal; display: inline-flex; vertical-align: middle; margin-right: 8px; box-shadow: 0 0 0 2px var(--sombra, #000); }
+.tema-cores i { display: block; width: 10px; height: 14px; }
+.tema-cores i:nth-child(1) { background: var(--bg); }
+.tema-cores i:nth-child(2) { background: var(--painel-3); }
+.tema-cores i:nth-child(3) { background: var(--ouro); }
+.tema-cores i:nth-child(4) { background: var(--brasa); }
+.temas-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.temas-lista .modo span { display: flex; align-items: center; width: 100%; }
+.tema-desc { display: block; }

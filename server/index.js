@@ -17,9 +17,10 @@ import {
   alternarTarefa, lerEstudos, lerRegistros, temRegistro, validarRegistro, adicionarRegistro, removerRegistro, EXT_SERVIDAS, RE_TAREFA,
 } from './cofres.js';
 import {
-  carregarPerfis, nomesPerfis, temaDe, gravaNasNotas, podeVerTrilha, podeVerArquivo, cargosPermitidos, PERFIL_CONTA_NOVA,
+  carregarPerfis, nomesPerfis, temaDe, temaIdDe, gravaNasNotas, podeVerTrilha, podeVerArquivo, cargosPermitidos, PERFIL_CONTA_NOVA,
 } from './perfis.js';
 import * as grupo from './grupo.js';
+import { temaExiste } from './temas.js';
 import * as espaco from './espaco.js';
 import { enviarConfirmacao, emailConfigurado, urlPublica } from './email.js';
 import * as foco from './foco.js';
@@ -240,7 +241,10 @@ app.use(express.static(config.publicDir, { index: false, cacheControl: false, se
 
 app.use(carregarSessao);
 app.use((req, res, next) => {
-  if (req.usuario) req.usuario.tema = temaDe(req.usuario);
+  if (req.usuario) {
+    req.usuario.tema = temaDe(req.usuario);
+    req.usuario.temaId = temaIdDe(req.usuario);
+  }
   next();
 });
 
@@ -816,6 +820,7 @@ app.post('/api/conta/email', async (req, res) => {
 });
 
 app.post('/api/conta/tema', (req, res) => {
+  if (!temaExiste(req.body?.tema)) throw new ErroHttp(400, 'Tema desconhecido.');
   definirTema(req.usuario.id, req.body?.tema);
   res.json({ ok: true });
 });

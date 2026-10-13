@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 import { db } from './db.js';
 import { config } from './config.js';
+import { temaPorId } from './temas.js';
 
 const scrypt = promisify(crypto.scrypt);
 const DIA = 24 * 60 * 60 * 1000;
@@ -182,7 +183,7 @@ export function definirPerfilPublico(id, { nome, arroba }) {
 }
 
 export function definirTema(id, tema) {
-  db.prepare('UPDATE usuarios SET tema = ? WHERE id = ?').run(tema === 'pixel' ? 'pixel' : 'normal', id);
+  db.prepare('UPDATE usuarios SET tema = ? WHERE id = ?').run(temaPorId(tema).id, id);
 }
 
 export const limparConvitePendente = (id) => db.prepare('UPDATE usuarios SET convite_pendente = NULL WHERE id = ?').run(id);

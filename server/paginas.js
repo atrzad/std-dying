@@ -3,6 +3,7 @@ import { sprite, EMBLEMAS } from './sprites.js';
 import { dataBR, diasEntre, hojeISO, somarDias, nomeCargo } from './resumo.js';
 import { formatarDuracao } from './foco.js';
 import { CITACOES, citacaoDoDia } from './citacoes.js';
+import { TEMAS } from './temas.js';
 
 // O caderno saiu do Ayo Std: as anotações vivem no Ayo Sketchbook (site próprio, mesma conta).
 const SKETCHBOOK = (process.env.SKETCHBOOK_URL || 'http://localhost:3400').replace(/\/$/, '');
@@ -158,10 +159,11 @@ ${px ? '<meta name="color-scheme" content="dark">' : '<meta name="color-scheme" 
 <title>${esc(titulo ? `${titulo} · Ayo Std` : 'Ayo Std')}</title>
 <link rel="icon" href="/icone.svg" type="image/svg+xml">
 ${px ? '<link rel="stylesheet" href="/css/fontes.css">\n<link rel="stylesheet" href="/css/ayo.css">' : '<link rel="stylesheet" href="/css/normal.css">'}
+<link rel="stylesheet" href="/css/temas.css">
 <script src="/js/ayo.js" defer></script>
 ${scripts.map((src) => `<script src="${src}" defer></script>`).join('\n')}
 </head>
-<body class="${px ? 'tema-pixel' : 'tema-normal'}${usuario ? ' com-nav' : ''}${usuario && foco ? ' com-foco' : ''} ${esc(classe)}">
+<body class="${px ? 'tema-pixel' : 'tema-normal'}${px && usuario?.temaId && usuario.temaId !== 'pixel' ? ` paleta-${esc(usuario.temaId)}` : ''}${usuario ? ' com-nav' : ''}${usuario && foco ? ' com-foco' : ''} ${esc(classe)}">
 <a class="pular" href="#conteudo">Pular para o conteúdo</a>
 ${usuario ? `<div class="casca">
 ${navegacao({ px, ativo, usuario, trilhas, almas, notaAtual })}
@@ -1172,7 +1174,7 @@ export function paginaEspacoNotaEditar({ usuario, trilhas, almas, foco, e, n }) 
 
 export function paginaConfiguracoes({ usuario, trilhas, almas, foco, conta, emailPendente, membro, usuarios, perfis, emailAtivo }) {
   const nomePerfil = (chave) => perfis.find((p) => p.chave === chave)?.descricao || chave;
-  const tema = usuario.tema;
+  const tema = usuario.temaId || usuario.tema;
   const gestao = usuarios ? `
     <section class="caixa largo"><h3>Pessoas com acesso</h3>
       <div class="tabela"><table><thead><tr><th>Pessoa</th><th>Perfil</th><th>Situação</th><th></th></tr></thead><tbody>
@@ -1232,11 +1234,10 @@ export function paginaConfiguracoes({ usuario, trilhas, almas, foco, conta, emai
         </form></section>
       <section class="caixa"><h3>Aparência</h3>
         <form data-form="conta-tema" class="form-conta" novalidate>
-          <fieldset class="modos"><legend>Tema</legend>
-            <label class="modo"><input type="radio" name="tema" value="pixel"${tema === 'pixel' ? ' checked' : ''}><span>Pixel (padrão)</span></label>
-            <label class="modo"><input type="radio" name="tema" value="normal"${tema === 'normal' ? ' checked' : ''}><span>Normal</span></label>
+          <fieldset class="modos temas-lista"><legend>Tema</legend>
+            ${TEMAS.map((t) => `<label class="modo" title="${esc(t.descricao)}"><input type="radio" name="tema" value="${esc(t.id)}"${tema === t.id ? ' checked' : ''}><span><em class="tema-cores paleta-${esc(t.id)}" aria-hidden="true"><i></i><i></i><i></i><i></i></em>${esc(t.nome)}${t.id === 'pixel' ? ' (padrão)' : ''}</span></label>`).join('\n            ')}
           </fieldset>
-          <p class="ajuda">Toda conta nova começa no tema padrão. A troca vale na hora.</p>
+          <p class="ajuda">${esc(TEMAS.find((t) => t.id === tema)?.descricao || '')} Toda conta nova começa no tema padrão. A troca vale na hora.</p>
         </form></section>
       <section class="caixa" id="privacidade"><h3>Privacidade e compartilhamento</h3>
         ${membro ? `<p>Grupo: <b>${esc(membro.grupo_nome)}</b>. O que você compartilha com ele:</p>
