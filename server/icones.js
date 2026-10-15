@@ -29,9 +29,16 @@ const FORMAS = {
   copiar: '<path d="M8 8h13v13H8ZM16 8V3H3v13h5"/>',
   email: '<rect x="3" y="5" width="18" height="14" rx="1"/><path d="m3 6 9 7 9-7"/>',
   voltar: '<path d="m10 5-7 7 7 7M3 12h18"/>',
+  avancar: '<path d="m14 5 7 7-7 7M21 12H3"/>',
   link: '<path d="M14 3h7v7m0-7L11 13M10 5H3v16h16v-7"/>',
   atualizar: '<path d="M20 4v6h-6M4 20v-6h6M4 9a8 8 0 0 1 14-5l2 3M4 17l2 3a8 8 0 0 0 14-5"/>',
   filtrar: '<path d="M3 4h18l-7 8v7l-4 2v-9Z"/>',
+  calendario: '<rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4m8-4v4M7 14h3m4 0h3M7 18h3"/>',
+  revisao: '<path d="M4 12a8 8 0 1 0 2.6-5.9M4 3.5V9h5.5"/><path d="M12 8v4.5l3 2"/>',
+  ia: '<path d="m11 3 1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9Z"/><path d="m18.5 14 .9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9Z"/>',
+  parar: '<rect x="6" y="6" width="12" height="12" rx="1"/>',
+  olho: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  setas: '<path d="m8 9 4-4 4 4M8 15l4 4 4-4"/>',
 };
 
 export function iconeUI(nome) {

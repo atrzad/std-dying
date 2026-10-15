@@ -15,13 +15,37 @@ export class ErroHttp extends Error {
 // ---------- trilhas (config/trilhas.json) ----------
 
 let TRILHAS = [];
+const expandir = (p) => path.resolve(String(p).replace(/^~(?=$|\/)/, os.homedir()));
+
+// As pastas dos cofres às vezes mudam de lugar (para dentro e para fora do Ayo Sketchbook).
+// "pasta" é o lugar principal e "alternativas" os outros possíveis: vale a primeira que existir,
+// conferida de novo a cada poucos segundos, sem precisar reiniciar o serviço.
+function comPastaViva(bruta) {
+  const { pasta, alternativas = [], ...resto } = bruta;
+  const pastas = [pasta, ...alternativas].map(expandir);
+  const achar = () => pastas.find((p) => fs.existsSync(p)) || pastas[0];
+  let atual = achar();
+  let conferida = Date.now();
+  const t = { ...resto, pastas };
+  Object.defineProperty(t, 'pasta', {
+    enumerable: true,
+    get() {
+      if (Date.now() - conferida > 5000) {
+        conferida = Date.now();
+        if (!fs.existsSync(atual)) atual = achar();
+      }
+      return atual;
+    },
+  });
+  return t;
+}
 
 export function carregarTrilhas() {
   const lista = JSON.parse(fs.readFileSync(config.trilhasArquivo, 'utf8'));
-  TRILHAS = lista.map((t) => ({ ...t, pasta: path.resolve(t.pasta.replace(/^~(?=$|\/)/, os.homedir())) }));
+  TRILHAS = lista.map(comPastaViva);
   for (const t of TRILHAS) {
     if (!/^[a-z0-9-]{1,30}$/.test(t.slug)) throw new Error(`slug inválido em trilhas.json: ${t.slug}`);
-    if (!fs.existsSync(t.pasta)) console.warn(`[cofres] pasta não encontrada para "${t.slug}": ${t.pasta}`);
+    if (!fs.existsSync(t.pasta)) console.warn(`[cofres] pasta não encontrada para "${t.slug}": ${t.pastas.join(' | ')}`);
   }
   return TRILHAS;
 }
@@ -79,7 +103,7 @@ export async function listarArquivos(t) {
 
 // Item de tarefa em lista (também dentro de citação): "- [ ] texto", "1. [x] texto", "> - [ ] texto".
 export const RE_TAREFA = /^((?:[ \t]*>)*[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+\[)([ xX])(\][ \t]+)(?=\S)/;
-const RE_CERCA = /^[ \t]*(?:>[ \t]*)*(```|~~~)/;
+export const RE_CERCA = /^[ \t]*(?:>[ \t]*)*(```|~~~)/;
 
 export const hashLinha = (linha) => crypto.createHash('sha1').update(linha.replace(/\r$/, '')).digest('hex').slice(0, 12);
 

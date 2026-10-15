@@ -1,10 +1,13 @@
-import { esc, caminhoURL } from './markdown.js';
+import { esc, caminhoURL, renderizarTexto } from './markdown.js';
 import { sprite } from './sprites.js';
 import { iconeUI, iconeTrilha, acao } from './icones.js';
 import { dataBR, diasEntre, hojeISO, somarDias, nomeCargo } from './resumo.js';
 import { formatarDuracao } from './foco.js';
 import { CITACOES, citacaoDoDia } from './citacoes.js';
 import { TEMAS, temaPorId } from './temas.js';
+import { DIAS, DIAS_CURTOS, FONTES, TODAS } from './cronograma.js';
+import { RESULTADOS, ORIGENS, PRESETS, rotuloEtapa } from './revisoes.js';
+import { TAREFAS, MODOS as MODOS_IA, ESTILOS, DIFICULDADES, QUANTIDADES } from './ia.js';
 
 // O caderno saiu do Ayo Std: as anotações vivem no Ayo Sketchbook (site próprio, mesma conta).
 const SKETCHBOOK = (process.env.SKETCHBOOK_URL || 'http://localhost:3400').replace(/\/$/, '');
@@ -97,8 +100,13 @@ function navegacao({ px, ativo, usuario, trilhas, almas, notaAtual }) {
         ${pct == null ? '' : medidor(pct, { rotulo: `Progresso de ${t.nome}`, classe: 'tc nav-medidor' })}${notas}
       </li>`;
   }).join('');
+  const pendentes = usuario.revisoesPendentes || 0;
   const ferramentas = [
     item('foco', '/foco', 'Foco', icone('foco')),
+    item('cronograma', '/cronograma', 'Cronograma', icone('calendario')),
+    item('revisoes', '/revisoes', 'Revisões', icone('revisao'),
+      pendentes ? `<b class="nav-badge" title="${pendentes} ${pendentes === 1 ? 'revisão' : 'revisões'} para hoje">${pendentes}</b>` : ''),
+    item('ia', '/ia', 'IA', icone('ia')),
     item('espaco', '/espaco', 'Meu espaço', icone('pasta')),
     `<a class="nav-item t-caderno" href="${SKETCHBOOK}" title="Abrir o Ayo Sketchbook (notas e caneta)">${icone('caderno')}<span class="nav-rot">Sketchbook ↗</span></a>`,
     item('grupo', '/grupo', 'Grupo', icone('grupo')),
@@ -160,6 +168,7 @@ ${px ? '<link rel="stylesheet" href="/css/fontes.css">\n<link rel="stylesheet" h
 <link rel="stylesheet" href="/css/temas.css">
 ${wiki ? '<link rel="stylesheet" href="/css/wikipedia.css">' : ''}
 <link rel="stylesheet" href="/css/icones.css">
+<link rel="stylesheet" href="/css/planejamento.css">
 ${usuario && foco ? '<link rel="stylesheet" href="/css/pomodoro.css">' : ''}
 <script src="/js/ayo.js" defer></script>
 ${scripts.map((src) => `<script src="${src}" defer></script>`).join('\n')}
@@ -261,7 +270,7 @@ function blocoCitacao() {
   </figure>`;
 }
 
-export function paginaInicio({ usuario, cards, eventos, trilhas, almas, foco, totais, streak, grupoNome }) {
+export function paginaInicio({ usuario, cards, eventos, trilhas, almas, foco, totais, streak, grupoNome, diaHoje = null }) {
   const px = ehPixel(usuario);
   const prox = proximaProva(cards);
   const hoje = new Date();
@@ -311,6 +320,7 @@ export function paginaInicio({ usuario, cards, eventos, trilhas, almas, foco, to
       </div>
       ${px ? `<div class="inicio-fogo" aria-hidden="true">${sprite('fogueira', { escala: 9 })}</div>` : ''}
     </section>
+    ${blocoHoje(diaHoje, trilhas)}
     <section class="envolve">
       <h2 class="titulo-secao">${px ? 'Escolha a sua trilha' : 'Trilhas'}</h2>
       <div class="cartoes">${cartoes}</div>
@@ -1046,10 +1056,12 @@ export function paginaPrivacidade({ usuario }) {
       <p class="eyebrow">Regras de uso e privacidade</p><h1 class="titulo-gotico">Privacidade</h1>
       <h2>O que guardamos</h2>
       <ul><li>Conta: nome, @usuário, e-mail (depois de confirmado) e a senha cifrada (nunca a senha em si).</li>
-        <li>O que você cria aqui: sessões de foco, anotações do caderno, trilhas e notas do seu espaço, progresso e o histórico das suas ações.</li>
+        <li>O que você cria aqui: sessões de foco, anotações do caderno, trilhas e notas do seu espaço, cronograma, revisões, pedidos à IA, progresso e o histórico das suas ações.</li>
         <li>Registros de consentimento: quando aceitou os termos, os cookies e as regras de compartilhamento do grupo.</li></ul>
       <h2>Cookies</h2>
       <p>Usamos <b>um único cookie essencial</b>, o da sessão de login (protegido: só trafega por HTTPS e não é lido por scripts). Preferências como som do pomodoro e modo da caneta ficam apenas no seu navegador. Não há cookies de publicidade nem de rastreamento.</p>
+      <h2>Inteligência artificial</h2>
+      <p>A página IA é opcional. Quando você pede uma análise, um resumo ou questões, o assunto e o trecho da nota que você escolheu são enviados à API da Anthropic (Claude) para gerar a resposta, que fica salva só na sua conta. Nada é enviado sem você clicar em “Gerar”.</p>
       <h2>Regras entre contas</h2>
       <ol><li>Cada conta só lê e altera os próprios dados. Isso é conferido no servidor em cada pedido, não só escondido na tela.</li>
         <li>Contas novas não têm acesso aos cofres do dono do site; trabalham no próprio espaço.</li>
@@ -1173,7 +1185,7 @@ export function paginaEspacoNotaEditar({ usuario, trilhas, almas, foco, e, n }) 
 
 // ---------- configurações ----------
 
-export function paginaConfiguracoes({ usuario, trilhas, almas, foco, conta, emailPendente, membro, usuarios, perfis, emailAtivo }) {
+export function paginaConfiguracoes({ usuario, trilhas, almas, foco, conta, emailPendente, membro, usuarios, perfis, emailAtivo, ajustesRevisoes }) {
   const nomePerfil = (chave) => perfis.find((p) => p.chave === chave)?.descricao || chave;
   const tema = usuario.temaId || usuario.tema;
   const gestao = usuarios ? `
@@ -1240,6 +1252,7 @@ export function paginaConfiguracoes({ usuario, trilhas, almas, foco, conta, emai
           </fieldset>
           <p class="ajuda">${esc(TEMAS.find((t) => t.id === tema)?.descricao || '')} Toda conta nova começa no tema padrão. A troca vale na hora.</p>
         </form></section>
+      ${blocoAjustesRevisoes(ajustesRevisoes)}
       <section class="caixa" id="privacidade"><h3>Privacidade e compartilhamento</h3>
         ${membro ? `<p>Grupo: <b>${esc(membro.grupo_nome)}</b>. O que você compartilha com ele:</p>
         <form data-form="grupo-consentir" class="form-conta" novalidate>
@@ -1280,6 +1293,449 @@ export function paginaErro({ status, usuario = null, trilhas = [], almas = null,
       <h1 class="titulo-morte">${perdido ? (px ? 'Você se perdeu' : 'Página não encontrada') : 'Algo deu errado'}</h1>
       <p>${perdido ? 'Esta página não existe ou não está disponível para a sua conta.' : 'O servidor encontrou um erro. Nada foi gravado pela metade; tente de novo.'}</p>
       <a class="btn btn-ouro" href="/">${px ? 'Voltar à fogueira' : 'Voltar ao início'}</a>
+    </section>`,
+  });
+}
+
+// ---------- cronograma, revisões e IA: peças comuns ----------
+
+// Nome curto e classe de cor de cada trilha (cofre: t-<slug>; espaço: c-<cor>; "*": todas).
+function infoTrilhas(trilhas) {
+  const mapa = new Map(trilhas.map((t) => [t.slug, t]));
+  return (slug) => {
+    if (slug === TODAS) return { slug, nome: 'Todas as trilhas', curto: 'Todas', classe: 't-inicio' };
+    const t = mapa.get(slug);
+    if (!t) return { slug, nome: 'Outra trilha', curto: '?', classe: 't-inicio', desconhecida: true };
+    return { slug, nome: t.nome, curto: t.curto || t.nome, classe: t.espaco ? `c-${t.cor}` : `t-${t.slug}` };
+  };
+}
+
+const linkFoco = (trilha, assunto) => `/foco?trilha=${encodeURIComponent(trilha)}&amp;assunto=${encodeURIComponent(String(assunto || '').slice(0, 100))}`;
+
+function linkDaRevisao(r, info) {
+  if (!r.ref || info(r.trilha).desconhecida) return '';
+  const e = /^e(\d{1,12})$/.exec(r.trilha);
+  const n = /^nota-(\d{1,12})$/.exec(r.ref);
+  if (e && n) return `/espaco/${e[1]}/nota/${n[1]}`;
+  if (!e && /\.md$/i.test(r.ref)) return `/t/${r.trilha}/n/${caminhoURL(r.ref)}`;
+  return '';
+}
+
+function botoesRevisao(r) {
+  const b = (res, classe) => `<button type="button" class="${classe}" data-acao-url="/api/revisoes/${r.id}/resultado" data-acao-corpo='{"resultado":"${res}"}' data-acao-msg="Revisão registrada: ${RESULTADOS[res].toLowerCase()}.">${RESULTADOS[res]}</button>`;
+  return `<span class="rev-botoes" role="group" aria-label="Como foi a revisão">${b('facil', 'btn')}${b('bom', 'btn btn-ouro')}${b('dificil', 'btn')}${b('errei', 'btn-x')}</span>`;
+}
+
+function htmlBloco(b, dia, info) {
+  const t = info(b.trilha);
+  const pct = b.minutos ? (100 * b.feitosMin) / b.minutos : 0;
+  const assunto = b.assunto || (b.fonte === 'rotacao' ? 'Sem conteúdo nesta semana no cronograma.' : '');
+  const acaoBloco = b.fonte === 'revisoes'
+    ? `<a class="btn" href="/revisoes">${acao('revisao', 'Revisar')}</a>`
+    : `<a class="btn" href="${linkFoco(b.trilha, b.assunto || b.rotulo || t.nome)}">${acao('foco', 'Focar')}</a>`;
+  const auto = b.feito && !b.manual;
+  return `
+      <li class="bloco ${t.classe}${b.feito ? ' feito' : ''}">
+        <label class="bloco-check" title="${auto ? 'Feito pelo tempo de foco do dia' : 'Marcar como feito'}"><input type="checkbox" class="cb" data-crono-feito="${b.id}" data-data="${dia.data}"${b.feito ? ' checked' : ''}${auto ? ' disabled' : ''}><span class="visivel-leitor">Feito</span></label>
+        <span class="bloco-tempo">${b.inicio ? `<time>${esc(b.inicio)}</time>` : ''}<b>${formatarDuracao(b.minutos * 60)}</b></span>
+        <span class="bloco-txt">
+          <span class="bloco-topo"><span class="ev-trilha ${t.classe}">${esc(t.curto)}</span>${b.rotulo ? `<b class="bloco-rotulo">${esc(b.rotulo)}</b>` : ''}${b.detalhe ? `<small>${esc(b.detalhe)}</small>` : ''}</span>
+          <span class="bloco-assunto">${esc(assunto)}</span>
+          ${b.fonte === 'revisoes' ? '' : `<span class="bloco-prog">${medidor(pct, { classe: 'tc', rotulo: `Foco feito: ${b.feitosMin} de ${b.minutos} minutos` })}<small>${b.feitosMin ? `${b.feitosMin} de ${b.minutos} min de foco` : 'sem foco ainda'}</small></span>`}
+        </span>
+        <span class="bloco-acoes">${acaoBloco}</span>
+      </li>`;
+}
+
+function htmlDia(dia, { info, hoje, maxRev = 8 }) {
+  const eventos = dia.eventos.map((e) => {
+    const t = info(e.trilha);
+    return `<li class="evento${e.prova ? ' prova' : ''}${e.feito ? ' feito' : ''}"><span class="ev-trilha ${t.classe}">${esc(t.curto)}</span><span>${esc(e.texto)}</span></li>`;
+  }).join('');
+  const blocos = dia.blocos.map((b) => htmlBloco(b, dia, info)).join('');
+  const revs = dia.revisoes.length ? `
+      <div class="dia-revisoes">
+        <h3 class="mini-titulo">${iconeUI('revisao')}<span>Revisões ${dia.data === hoje ? 'para hoje' : 'do dia'} (${dia.revisoes.length})</span></h3>
+        <ul>${dia.revisoes.slice(0, maxRev).map((r) => {
+          const t = info(r.trilha);
+          return `<li class="rev-curta"><span class="ev-trilha ${t.classe}">${esc(t.curto)}</span><span class="rev-assunto">${esc(r.assunto)}${r.atrasada ? ' <small class="atrasada">atrasada</small>' : ''}</span>${r.proxima <= hoje ? botoesRevisao(r) : ''}</li>`;
+        }).join('')}</ul>
+        ${dia.revisoes.length > maxRev ? `<a class="mais-revisoes" href="/revisoes">mais ${dia.revisoes.length - maxRev} em Revisões</a>` : ''}
+      </div>` : '';
+  const total = dia.planejado ? `${formatarDuracao(dia.planejado * 60)} planejadas` : 'sem blocos';
+  const feito = dia.focoDia ? ` · ${formatarDuracao(dia.focoDia * 60)} de foco` : '';
+  const cabeca = `<span class="dia-nome">${esc(dia.nome)} <small>${dataBR(dia.data, false)}${dia.hoje ? ' · hoje' : ''}</small></span><span class="dia-total">${total}${feito}</span>`;
+  const miolo = `${eventos ? `<ul class="dia-eventos">${eventos}</ul>` : ''}
+      ${blocos ? `<ol class="blocos">${blocos}</ol>` : '<p class="vazio">Nenhum bloco neste dia.</p>'}
+      ${revs}`;
+  // dias que já passaram ficam recolhidos
+  return dia.passado
+    ? `<details class="caixa dia passado" id="d-${dia.data}"><summary class="dia-cabeca">${cabeca}</summary>${miolo}</details>`
+    : `<section class="caixa dia${dia.hoje ? ' hoje' : ''}" id="d-${dia.data}" aria-label="${esc(dia.nome)}, ${dataBR(dia.data)}"><header class="dia-cabeca">${cabeca}</header>${miolo}</section>`;
+}
+
+function blocoHoje(dia, trilhas) {
+  if (!dia) return '';
+  const vazio = !dia.blocos.length && !dia.eventos.length && !dia.revisoes.length;
+  return `
+    <section class="envolve hoje-inicio">
+      <h2 class="titulo-secao">Hoje</h2>
+      ${vazio
+        ? '<p class="caixa painel-vazio">Nada marcado para hoje. <a href="/cronograma/modelo">Monte a sua semana-modelo</a> para ver aqui o que estudar a cada dia, junto com as revisões que vencerem.</p>'
+        : htmlDia({ ...dia, passado: false }, { info: infoTrilhas(trilhas), hoje: dia.data, maxRev: 5 })}
+      <p class="ajuda"><a href="/cronograma">Ver a semana inteira</a> · <a href="/revisoes">Todas as revisões</a></p>
+    </section>`;
+}
+
+function blocoAjustesRevisoes(a) {
+  if (!a) return '';
+  const atual = Object.entries(PRESETS).find(([, p]) => p.intervalos.join(',') === a.intervalos.join(','))?.[0] || 'personalizado';
+  const opcao = (valor, rotulo, dias = '') => `<label class="modo"><input type="radio" name="preset" value="${valor}"${dias ? ` data-intervalos="${dias}"` : ''}${atual === valor ? ' checked' : ''}><span>${esc(rotulo)}</span></label>`;
+  return `
+      <section class="caixa" id="revisoes"><h3>Revisões espaçadas</h3>
+        <form data-form="revisoes-ajustes" class="form-conta" novalidate>
+          <fieldset class="modos"><legend>Intervalos entre as revisões</legend>
+            ${Object.entries(PRESETS).map(([k, p]) => opcao(k, `${p.nome}: ${p.intervalos.join(' · ')} dias`, p.intervalos.join(','))).join('')}
+            ${opcao('personalizado', 'Personalizado')}
+          </fieldset>
+          <label>Dias, separados por vírgula (personalizado)<input name="personalizado" value="${esc(a.intervalos.join(', '))}" inputmode="numeric" placeholder="1, 7, 30, 90"></label>
+          <p class="ajuda">Cada revisão boa avança um intervalo; “Fácil” pula um; “Difícil” volta um; “Errei” recomeça do primeiro. Revisões que cairiam depois da prova vêm para dois dias antes dela.</p>
+          <label class="opcao"><input type="checkbox" name="foco"${a.foco ? ' checked' : ''}> <span>Pomodoro com assunto (10 min ou mais) agenda revisão</span></label>
+          <label class="opcao"><input type="checkbox" name="tarefa"${a.tarefa ? ' checked' : ''}> <span>Marcar tarefa numa nota agenda revisão</span></label>
+          <label class="opcao"><input type="checkbox" name="questoes"${a.questoes ? ' checked' : ''}> <span>Registrar questões agenda ou ajusta a revisão (abaixo da meta: revisar amanhã)</span></label>
+          <p class="erro-form" data-erro hidden></p><button class="btn" type="submit">${acao('salvar', 'Salvar revisões')}</button>
+        </form></section>`;
+}
+
+// ---------- cronograma ----------
+
+export function paginaCronograma({ usuario, trilhas, almas, foco, semana, temModelo, anterior, proxima, ehAtual }) {
+  const info = infoTrilhas(trilhas);
+  const hoje = hojeISO();
+  const faixa = semana.dias.map((d) => `<a class="dia-chip${d.hoje ? ' hoje' : ''}${d.passado ? ' passado' : ''}" href="#d-${d.data}">
+      <b>${d.curto}</b><span>${dataBR(d.data, false)}</span>
+      <small>${d.planejado ? formatarDuracao(d.planejado * 60) : '—'}${d.focoDia ? ` · ✓ ${formatarDuracao(d.focoDia * 60)}` : ''}</small>
+      ${d.eventos.length || d.revisoes.length ? `<i class="chip-marcas">${d.eventos.length ? `<span title="${d.eventos.length} evento(s)">●</span>` : ''}${d.revisoes.length ? `<span title="${d.revisoes.length} revisão(ões)">↻${d.revisoes.length}</span>` : ''}</i>` : ''}
+    </a>`).join('');
+  const semanas = semana.semanas.filter((x) => x.s >= 1).map((x) => `${esc(x.t.curto)} S${x.s}`).join(' · ');
+  return layout({
+    titulo: 'Cronograma', ativo: 'cronograma', usuario, trilhas, almas, foco, classe: 'pg-cronograma',
+    corpo: `
+    <section class="envolve conta-topo">
+      <p class="eyebrow">Cronograma da semana</p>
+      <h1 class="titulo-gotico">${dataBR(semana.segunda, false)} a ${dataBR(semana.ate, false)}</h1>
+      <p class="lema">${semanas ? `Semana do plano: ${semanas}. ` : ''}Os assuntos vêm dos cronogramas dos cofres; os horários, da sua semana-modelo.</p>
+      <nav class="semana-nav" aria-label="Semanas">
+        <a class="btn" href="/cronograma?semana=${anterior}">${acao('voltar', 'Anterior')}</a>
+        ${ehAtual ? '' : '<a class="btn" href="/cronograma">Esta semana</a>'}
+        <a class="btn" href="/cronograma?semana=${proxima}">${acao('avancar', 'Próxima')}</a>
+        <a class="btn btn-ouro" href="/cronograma/modelo">${acao('editar', 'Editar semana-modelo')}</a>
+      </nav>
+    </section>
+    <section class="envolve"><nav class="semana-faixa" aria-label="Dias da semana">${faixa}</nav></section>
+    ${temModelo ? '' : '<section class="envolve"><p class="caixa painel-vazio">Sua semana-modelo ainda está vazia. <a href="/cronograma/modelo">Monte os blocos</a>: cada bloco é uma faixa de estudo num dia da semana (ex.: segunda, 2h de Manaus Prev na coluna A do cronograma). Os eventos com data dos cronogramas e as revisões já aparecem abaixo.</p></section>'}
+    <section class="envolve semana-dias">${semana.dias.map((d) => htmlDia(d, { info, hoje })).join('')}</section>`,
+  });
+}
+
+function formBloco({ b = null, escolhas, colunas }) {
+  const fonte = b?.fonte || 'rotacao';
+  const dias = b
+    ? `<label>Dia<select name="dia">${DIAS.map((d, i) => `<option value="${i}"${b.dia === i ? ' selected' : ''}>${d}</option>`).join('')}</select></label>`
+    : `<fieldset class="modos dias-sel"><legend>Dias da semana</legend>${DIAS_CURTOS.map((d, i) => `<label class="modo"><input type="checkbox" name="dias" value="${i}"${i < 5 ? ' checked' : ''}><span>${d}</span></label>`).join('')}</fieldset>`;
+  const trilhaAtual = b?.trilha || escolhas[0]?.slug || '';
+  const optsTrilhas = escolhas.map((t) => `<option value="${esc(t.slug)}"${t.slug === trilhaAtual ? ' selected' : ''}>${esc(t.nome)}</option>`).join('')
+    + `<option value="${TODAS}"${trilhaAtual === TODAS ? ' selected' : ''}>Todas (só para revisões)</option>`;
+  const optsColunas = colunas.length
+    ? colunas.map((c) => `<option value="${esc(c.valor)}" data-trilha="${esc(c.trilha)}"${b?.coluna === c.valor ? ' selected' : ''}>${esc(c.rotulo)}</option>`).join('')
+    : '<option value="">Nenhum cronograma com tabela de semanas</option>';
+  return `<form class="form-conta form-bloco" data-form="${b ? 'crono-bloco-editar' : 'crono-bloco'}"${b ? ` data-id="${b.id}"` : ''} novalidate>
+      ${dias}
+      <div class="campos">
+        <label>Início<input type="time" name="inicio" value="${esc(b?.inicio || '')}"></label>
+        <label>Minutos<input type="number" name="minutos" min="5" max="720" step="5" value="${b?.minutos || 60}" required inputmode="numeric"></label>
+        <label class="cargo">Trilha<select name="trilha" data-bloco-trilha>${optsTrilhas}</select></label>
+        <label class="largo">Rótulo (opcional)<input name="rotulo" maxlength="60" value="${esc(b?.rotulo || '')}" placeholder="Ex.: Específica A, Matemática, Redação"></label>
+      </div>
+      <fieldset class="modos"><legend>De onde vem o assunto</legend>${Object.entries(FONTES).map(([k, v]) => `<label class="modo"><input type="radio" name="fonte" value="${k}"${k === fonte ? ' checked' : ''}><span>${v}</span></label>`).join('')}</fieldset>
+      <label data-campo-fonte="rotacao">Coluna do cronograma (o assunto muda a cada semana)<select name="coluna" data-bloco-coluna>${optsColunas}</select></label>
+      <label data-campo-fonte="fixo">Assunto<input name="assunto" maxlength="160" value="${esc(b?.fonte === 'fixo' ? b.assunto : '')}" placeholder="Ex.: Redação completa e correção pelas 5 competências"></label>
+      <p class="ajuda" data-campo-fonte="proxima">O bloco mostra a primeira tarefa ainda não feita da trilha, na ordem das notas.</p>
+      <p class="ajuda" data-campo-fonte="revisoes">O bloco junta as revisões espaçadas do dia.</p>
+      <p class="erro-form" data-erro hidden></p>
+      <button class="btn btn-ouro" type="submit">${acao(b ? 'salvar' : 'adicionar', b ? 'Salvar bloco' : 'Adicionar bloco')}</button>
+    </form>`;
+}
+
+export function paginaCronogramaModelo({ usuario, trilhas, almas, foco, blocos, escolhas, colunas }) {
+  const info = infoTrilhas(trilhas);
+  const rotuloColuna = new Map(colunas.map((c) => [c.valor, c.rotulo]));
+  const porDia = DIAS.map((nome, d) => {
+    const lista = blocos.filter((b) => b.dia === d);
+    const total = lista.reduce((s, b) => s + b.minutos, 0);
+    return `
+      <section class="caixa modelo-dia">
+        <h3>${nome} <small>${total ? formatarDuracao(total * 60) : 'livre'}</small></h3>
+        ${lista.length ? `<ol class="modelo-blocos">${lista.map((b, i) => {
+          const t = info(b.trilha);
+          const origem = b.fonte === 'rotacao' ? (rotuloColuna.get(b.coluna) || 'coluna que sumiu do cronograma')
+            : b.fonte === 'fixo' ? b.assunto : FONTES[b.fonte];
+          return `<li class="modelo-bloco">
+            <span class="modelo-info"><span class="ev-trilha ${t.classe}">${esc(t.curto)}</span>
+              <b>${b.inicio ? `${esc(b.inicio)} · ` : ''}${formatarDuracao(b.minutos * 60)}</b>${b.rotulo ? ` ${esc(b.rotulo)}` : ''}
+              <small>${esc(origem)}</small></span>
+            <span class="modelo-acoes">
+              ${i > 0 ? `<button type="button" class="btn-x" data-acao-url="/api/cronograma/blocos/${b.id}/mover" data-acao-corpo='{"direcao":-1}' aria-label="Subir">↑</button>` : ''}
+              ${i < lista.length - 1 ? `<button type="button" class="btn-x" data-acao-url="/api/cronograma/blocos/${b.id}/mover" data-acao-corpo='{"direcao":1}' aria-label="Descer">↓</button>` : ''}
+              <button type="button" class="btn-x" data-acao-url="/api/cronograma/blocos/${b.id}/remover" data-confirmar data-acao-msg="Bloco removido.">${acao('excluir', 'Remover')}</button>
+            </span>
+            <details class="editar-bloco"><summary>Editar</summary>${formBloco({ b, escolhas, colunas })}</details>
+          </li>`;
+        }).join('')}</ol>` : '<p class="vazio">Nenhum bloco.</p>'}
+      </section>`;
+  }).join('');
+  const semanaTotal = blocos.reduce((s, b) => s + b.minutos, 0);
+  return layout({
+    titulo: 'Semana-modelo', ativo: 'cronograma', usuario, trilhas, almas, foco, classe: 'pg-cronograma',
+    scripts: [],
+    corpo: `
+    <section class="envolve conta-topo">
+      <nav class="migalhas"><a href="/cronograma">Cronograma</a> › Semana-modelo</nav>
+      <h1 class="titulo-gotico">Semana-modelo</h1>
+      <p class="lema">Os blocos se repetem toda semana. Um bloco ligado a uma coluna do cronograma mostra o assunto daquela semana (S1, S2…), lido direto da nota no cofre. Total: ${semanaTotal ? formatarDuracao(semanaTotal * 60) : '0 h'} por semana.</p>
+    </section>
+    <div class="trilha-grade envolve modelo-grade">
+      <section class="modelo-dias">${porDia}</section>
+      <aside class="lateral">
+        <section class="caixa"><h3>Novo bloco</h3>${formBloco({ escolhas, colunas })}</section>
+      </aside>
+    </div>`,
+  });
+}
+
+// ---------- revisões ----------
+
+function htmlRevisao(r, { info, intervalos, hoje }) {
+  const t = info(r.trilha);
+  const vencida = r.proxima <= hoje;
+  const atraso = r.proxima < hoje ? diasEntre(r.proxima, hoje) : 0;
+  const link = linkDaRevisao(r, info);
+  const quando = vencida
+    ? (atraso ? `atrasada ${atraso} ${atraso === 1 ? 'dia' : 'dias'}` : 'para hoje')
+    : `em ${dataBR(r.proxima, false)} (${diasEntre(hoje, r.proxima)} d)`;
+  return `
+      <li class="revisao${vencida ? ' vencida' : ''}">
+        <span class="ev-trilha ${t.classe}">${esc(t.curto)}</span>
+        <span class="rev-info">
+          <span class="rev-assunto">${link ? `<a href="${link}">${esc(r.assunto)}</a>` : esc(r.assunto)}</span>
+          <small>${rotuloEtapa(r, intervalos)} · ${quando} · estudado em ${dataBR(r.ultima, false)} · ${esc(ORIGENS[r.origem] || r.origem)}${r.revisoes ? ` · ${r.revisoes} ${r.revisoes === 1 ? 'revisão feita' : 'revisões feitas'}` : ''}</small>
+        </span>
+        <span class="rev-acoes">
+          ${vencida ? botoesRevisao(r) : ''}
+          <a class="btn" href="${linkFoco(r.trilha, r.assunto)}">${acao('foco', 'Focar')}</a>
+          <details class="rev-mais"><summary>Mais</summary><span class="rev-menu">
+            <button type="button" class="btn-x" data-acao-url="/api/revisoes/${r.id}/adiar" data-acao-corpo='{"dias":1}' data-acao-msg="Revisão adiada em 1 dia.">Adiar 1 dia</button>
+            <button type="button" class="btn-x" data-acao-url="/api/revisoes/${r.id}/arquivar" data-acao-msg="Revisão arquivada.">Arquivar</button>
+            <button type="button" class="btn-x" data-acao-url="/api/revisoes/${r.id}/remover" data-confirmar data-acao-msg="Revisão removida.">${acao('excluir', 'Remover')}</button>
+          </span></details>
+        </span>
+      </li>`;
+}
+
+export function paginaRevisoes({ usuario, trilhas, almas, foco, lista, arquivadas, ajustes, escolhas, filtro, feitasHoje }) {
+  const info = infoTrilhas(trilhas);
+  const hoje = hojeISO();
+  const em7 = somarDias(hoje, 7);
+  const ctx = { info, intervalos: ajustes.intervalos, hoje };
+  const vis = filtro ? lista.filter((r) => r.trilha === filtro) : lista;
+  const paraHoje = vis.filter((r) => r.proxima <= hoje);
+  const semana = vis.filter((r) => r.proxima > hoje && r.proxima <= em7);
+  const depois = vis.filter((r) => r.proxima > em7);
+  const atrasadas = paraHoje.filter((r) => r.proxima < hoje).length;
+  const listaHtml = (itens, vazio) => (itens.length ? `<ul class="revisoes-lista caixa">${itens.map((r) => htmlRevisao(r, ctx)).join('')}</ul>` : `<p class="vazio">${vazio}</p>`);
+  return layout({
+    titulo: 'Revisões', ativo: 'revisoes', usuario, trilhas, almas, foco, classe: 'pg-revisoes',
+    corpo: `
+    <section class="envolve conta-topo">
+      <p class="eyebrow">Revisões espaçadas</p>
+      <h1 class="titulo-gotico">Revisões</h1>
+      <p class="lema">Cada assunto estudado volta em ${ajustes.intervalos.join(', ')} dias. Pomodoros com assunto, tarefas marcadas e questões registradas agendam sozinhos. <a href="/configuracoes#revisoes">Mudar os intervalos</a>.</p>
+      <div class="tiles revisoes-tiles">
+        <div class="tile"><span class="tile-rot">Para hoje</span><span class="tile-val">${paraHoje.length}</span><span class="tile-sub">${atrasadas ? `${atrasadas} ${atrasadas === 1 ? 'atrasada' : 'atrasadas'}` : 'nenhuma atrasada'}</span></div>
+        <div class="tile"><span class="tile-rot">Feitas hoje</span><span class="tile-val">${feitasHoje}</span><span class="tile-sub">revisões registradas</span></div>
+        <div class="tile"><span class="tile-rot">Próximos 7 dias</span><span class="tile-val">${semana.length}</span><span class="tile-sub">até ${dataBR(em7, false)}</span></div>
+        <div class="tile"><span class="tile-rot">No ciclo</span><span class="tile-val">${vis.length}</span><span class="tile-sub">assuntos ativos</span></div>
+      </div>
+    </section>
+    <div class="trilha-grade envolve revisoes-grade">
+      <section>
+        <form class="filtro-trilha" method="get" action="/revisoes"><label>Trilha<select name="trilha" data-enviar-ao-mudar><option value="">Todas</option>${escolhas.map((t) => `<option value="${esc(t.slug)}"${t.slug === filtro ? ' selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></label><noscript><button class="btn" type="submit">Filtrar</button></noscript></form>
+        <h2 class="titulo-secao">Para hoje</h2>
+        ${listaHtml(paraHoje, 'Nenhuma revisão para hoje. Estude algo novo e ela aparece aqui amanhã.')}
+        <h2 class="titulo-secao">Próximos 7 dias</h2>
+        ${listaHtml(semana, 'Nada nos próximos 7 dias.')}
+        ${depois.length ? `<details class="mais-tarde"><summary>Mais adiante (${depois.length})</summary>${listaHtml(depois, '')}</details>` : ''}
+        ${arquivadas.length ? `<details class="mais-tarde"><summary>Arquivadas (${arquivadas.length})</summary><ul class="revisoes-lista caixa">${arquivadas.map((r) => `
+          <li class="revisao arquivada"><span class="ev-trilha ${info(r.trilha).classe}">${esc(info(r.trilha).curto)}</span><span class="rev-info"><span class="rev-assunto">${esc(r.assunto)}</span><small>arquivada · estudado em ${dataBR(r.ultima, false)}</small></span>
+            <span class="rev-acoes"><button type="button" class="btn" data-acao-url="/api/revisoes/${r.id}/restaurar" data-acao-msg="Revisão de volta ao ciclo.">Restaurar</button>
+            <button type="button" class="btn-x" data-acao-url="/api/revisoes/${r.id}/remover" data-confirmar data-acao-msg="Revisão removida.">${acao('excluir', 'Remover')}</button></span></li>`).join('')}</ul></details>` : ''}
+      </section>
+      <aside class="lateral">
+        <section class="caixa"><h3>Estudei algo fora do site</h3>
+          <form data-form="revisao-nova" class="form-conta" novalidate>
+            <label>Trilha<select name="trilha">${escolhas.map((t) => `<option value="${esc(t.slug)}"${t.slug === filtro ? ' selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></label>
+            <label>Assunto<input name="assunto" maxlength="160" required placeholder="Ex.: Crase, DNS e DHCP, Funções afim"></label>
+            <label>Estudado em<input type="date" name="data" value="${hoje}" max="${hoje}" required></label>
+            <p class="erro-form" data-erro hidden></p>
+            <button class="btn btn-ouro" type="submit">${acao('adicionar', 'Agendar revisões')}</button>
+          </form>
+        </section>
+        <section class="caixa"><h3>Como funciona</h3>
+          <ul class="lista-simples">
+            <li><b>Fácil</b> pula um intervalo; <b>Bom</b> avança um; <b>Difícil</b> volta um; <b>Errei</b> recomeça.</li>
+            <li>Estudar de novo um assunto vencido (pomodoro, tarefa ou questões na meta) conta como revisão boa.</li>
+            <li>Questões abaixo da meta da semana mandam o assunto de volta para amanhã.</li>
+            <li>Revisões que cairiam depois da prova vêm para dois dias antes dela.</li>
+          </ul>
+        </section>
+      </aside>
+    </div>`,
+  });
+}
+
+// ---------- IA ----------
+
+const NOMES_NIVEL = { facil: 'fácil', medio: 'média', dificil: 'difícil' };
+
+export function htmlQuestoes(questoes) {
+  return `<ol class="questoes">${questoes.map((q, i) => {
+    const correta = q.alternativas.find((a) => a.correta);
+    return `
+      <li class="questao" data-questao>
+        <p class="q-cab"><b>Questão ${i + 1}</b> <small>${esc(q.assunto)}${q.nivel ? ` · ${esc(NOMES_NIVEL[q.nivel] || q.nivel)}` : ''}</small></p>
+        <div class="q-enunciado">${renderizarTexto(q.enunciado)}</div>
+        <ol class="q-alternativas">${q.alternativas.map((a) => `<li><button type="button" class="q-alt" data-correta="${a.correta ? 1 : 0}"><b>${esc(a.letra)}</b><span>${esc(a.texto)}</span></button></li>`).join('')}</ol>
+        <details class="q-gabarito"><summary>Gabarito e comentários</summary>
+          <p class="q-resposta">Resposta: <b>${esc(correta?.letra || '?')}</b></p>
+          ${renderizarTexto(q.explicacao)}
+          <ul class="q-comentarios">${q.alternativas.map((a) => `<li${a.correta ? ' class="correta"' : ''}><b>${esc(a.letra)}${a.correta ? ' (correta)' : ''}:</b> ${renderizarTexto(a.comentario)}</li>`).join('')}</ul>
+        </details>
+      </li>`;
+  }).join('')}</ol>`;
+}
+
+const ESTADOS_IA = { rodando: 'em andamento', ok: 'pronto', erro: 'erro', recusado: 'recusado', cortado: 'cortado', cancelado: 'cancelado' };
+const usd = (v) => `US$ ${Number(v || 0).toFixed(v >= 1 ? 2 : 3)}`;
+
+function linhaHistorico(h, info) {
+  const t = h.trilha ? info(h.trilha) : null;
+  const quando = new Date(h.criado);
+  return `<li><span class="ev-trilha ${t ? t.classe : 't-inicio'}">${esc(t ? t.curto : 'IA')}</span>
+    <span class="ev-txt"><a href="/ia/${h.id}">${esc(TAREFAS[h.tarefa].nome)}: ${esc(h.assunto || h.material || 'sem assunto')}</a>
+      <small>${esc(MODOS_IA[h.modo].nome.toLowerCase())} · ${esc(ESTADOS_IA[h.estado])}${h.custo_usd ? ` · ${usd(h.custo_usd)}` : ''}</small></span>
+    <time>${quando.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${quando.toTimeString().slice(0, 5)}</time></li>`;
+}
+
+export function paginaIA({ usuario, trilhas, almas, foco, estado, escolhas, materiais, assuntos, dados, historico, gasto, hojeN, regras, trilhaInicial = '' }) {
+  const info = infoTrilhas(trilhas);
+  const status = estado.podeGerar
+    ? `<p class="ia-status ligada">${iconeUI('ia')}<span>Ligada · ${esc(estado.modelo)} · ${hojeN} de ${estado.limiteDiario} pedidos hoje · gasto do mês: ${usd(gasto)} de US$ ${estado.orcamento}</span></p>`
+    : `<p class="ia-status desligada">${iconeUI('ia')}<span>${esc(estado.motivo)} Enquanto isso, use “Ver o prompt” e cole no Claude (claude.ai).</span></p>`;
+  const radio = (nome, valor, rotulo, descricao, marcado) => `<label class="modo" title="${esc(descricao)}"><input type="radio" name="${nome}" value="${valor}"${marcado ? ' checked' : ''}><span>${esc(rotulo)}</span></label>`;
+  return layout({
+    titulo: 'IA', ativo: 'ia', usuario, trilhas, almas, foco, classe: 'pg-ia', scripts: ['/js/ia.js'],
+    corpo: `
+    <section class="envolve conta-topo">
+      <p class="eyebrow">Inteligência artificial</p>
+      <h1 class="titulo-gotico">${ehPixel(usuario) ? 'O Oráculo' : 'IA de estudo'}</h1>
+      <p class="lema">Analisa um assunto, faz resumos e cria questões no estilo da banca, sempre em linguagem técnica. Escolha o quanto ela deve raciocinar: mais raciocínio dá respostas mais profundas, mas demora e custa mais.</p>
+      ${status}
+    </section>
+    <div class="trilha-grade envolve ia-grade">
+      <section class="caixa ia-form-caixa">
+        <form class="form-conta form-ia" data-form="ia" novalidate>
+          <fieldset class="modos"><legend>Tarefa</legend>${Object.entries(TAREFAS).map(([k, t], i) => radio('tarefa', k, t.nome, t.descricao, i === 0)).join('')}</fieldset>
+          <fieldset class="modos"><legend>Raciocínio</legend>${Object.entries(MODOS_IA).map(([k, m]) => radio('modo', k, m.nome, m.descricao, k === 'medio')).join('')}</fieldset>
+          <p class="ajuda" data-ia-modo-desc>${esc(MODOS_IA.medio.descricao)}</p>
+          <div class="campos">
+            <label class="largo">Trilha<select name="trilha" data-ia-trilha><option value="">Sem trilha</option>${escolhas.map((t) => `<option value="${esc(t.slug)}"${t.slug === trilhaInicial ? ' selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></label>
+            <label class="largo">Material de referência<select name="material" data-ia-material><option value="">Nenhum: só o assunto</option>${materiais.map((m) => `<option value="${esc(m.valor)}" data-trilha="${esc(m.trilha)}">${esc(m.titulo)}</option>`).join('')}</select></label>
+            <label class="largo" data-ia-secao-campo hidden>Seção da nota<select name="secao" data-ia-secao><option value="">Nota inteira</option></select></label>
+            <label class="largo">Assunto<input name="assunto" maxlength="200" data-ia-assunto placeholder="Ex.: DNS e DHCP; Crase; Geometria espacial" autocomplete="off"></label>
+            <label class="largo" data-ia-cargo-campo hidden>Cargo<select name="cargo" data-ia-cargo></select></label>
+          </div>
+          <div class="campos" data-so-questoes hidden>
+            <label>Quantidade<select name="quantidade">${QUANTIDADES.map((n) => `<option value="${n}"${n === 5 ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+            <label>Nível<select name="dificuldade">${Object.entries(DIFICULDADES).map(([k, v]) => `<option value="${k}">${esc(v.replace(/ \(.*\)$/, ''))}</option>`).join('')}</select></label>
+            <label class="largo">Estilo<select name="estilo" data-ia-estilo>${Object.entries(ESTILOS).map(([k, v]) => `<option value="${k}">${esc(v.split(':')[0])}</option>`).join('')}</select></label>
+          </div>
+          ${Object.entries(assuntos).map(([slug, lista]) => `<datalist id="ia-assuntos-${esc(slug)}">${lista.map((a) => `<option value="${esc(a)}">`).join('')}</datalist>`).join('')}
+          <p class="erro-form" data-erro hidden></p>
+          <div class="foco-botoes">
+            <button class="btn btn-ouro" type="submit" data-ia-gerar${estado.podeGerar ? '' : ` disabled title="${esc(estado.motivo)}"`}>${acao('ia', 'Gerar')}</button>
+            <button class="btn" type="button" data-ia-ver-prompt>${acao('olho', 'Ver o prompt')}</button>
+            <button class="btn-x" type="button" data-ia-parar hidden>${acao('parar', 'Parar')}</button>
+          </div>
+        </form>
+      </section>
+      <aside class="lateral">
+        <details class="caixa ia-regras" open><summary><h3>Regras fixas</h3></summary>
+          <div class="nota ia-regras-txt">${renderizarTexto(regras)}</div>
+          <table class="ia-modos"><thead><tr><th>Modo</th><th>Esforço na API</th></tr></thead><tbody>${Object.entries(MODOS_IA).map(([k, m]) => `<tr><td>${esc(m.nome)}</td><td><code>${esc(estado.esforco[k])}</code></td></tr>`).join('')}</tbody></table>
+          <p class="ajuda">As regras ficam em <code>config/ia-regras.md</code>; modelo, esforço, limites e orçamento em <code>config/ia.json</code>.</p>
+        </details>
+      </aside>
+    </div>
+    <section class="envolve" data-ia-prompt hidden>
+      <h2 class="titulo-secao">Prompt</h2>
+      <div class="caixa ia-prompt"><div class="foco-botoes"><button class="btn btn-ouro" type="button" data-ia-copiar>${acao('copiar', 'Copiar prompt')}</button><span class="ajuda" data-ia-prompt-info></span></div><pre data-ia-prompt-texto></pre></div>
+    </section>
+    <section class="envolve" data-ia-resultado hidden>
+      <h2 class="titulo-secao" data-ia-titulo>Resposta</h2>
+      <div class="caixa ia-resultado">
+        <p class="ia-andamento" data-ia-andamento role="status"></p>
+        <details class="ia-pensamento" data-ia-pensamento hidden><summary>Raciocínio do modelo (resumo)</summary><div class="ia-pensamento-txt" data-ia-pensamento-txt></div></details>
+        <div class="ia-saida nota" data-ia-saida></div>
+        <div class="foco-botoes" data-ia-acoes hidden>
+          <a class="btn" data-ia-abrir href="/ia">${acao('link', 'Abrir resposta salva')}</a>
+          <button type="button" class="btn" data-ia-revisao>${acao('revisao', 'Agendar revisão do assunto')}</button>
+          <button type="button" class="btn" data-ia-copiar-resposta>${acao('copiar', 'Copiar texto')}</button>
+        </div>
+      </div>
+    </section>
+    <section class="envolve">
+      <h2 class="titulo-secao">Histórico</h2>
+      ${historico.length ? `<ul class="eventos caixa ia-historico">${historico.map((h) => linhaHistorico(h, info)).join('')}</ul>` : '<p class="vazio">Nenhum pedido ainda.</p>'}
+    </section>
+    <script type="application/json" id="ia-dados">${JSON.stringify(dados).replace(/</g, '\\u003c')}</script>`,
+  });
+}
+
+export function paginaIAResultado({ usuario, trilhas, almas, foco, pedido, conteudoHtml, raciocinioHtml }) {
+  const info = infoTrilhas(trilhas);
+  const t = pedido.trilha ? info(pedido.trilha) : null;
+  const quando = new Date(pedido.criado);
+  return layout({
+    titulo: `${TAREFAS[pedido.tarefa].nome}: ${pedido.assunto || pedido.material || 'IA'}`, ativo: 'ia', usuario, trilhas, almas, foco, classe: 'pg-ia', scripts: ['/js/ia.js'],
+    corpo: `
+    <section class="envolve conta-topo">
+      <nav class="migalhas"><a href="/ia">IA</a> › ${esc(TAREFAS[pedido.tarefa].nome)}</nav>
+      <h1 class="titulo-gotico">${esc(pedido.assunto || pedido.material || TAREFAS[pedido.tarefa].nome)}</h1>
+      <p class="heroi-nome">${t ? `${esc(t.nome)} · ` : ''}${esc(MODOS_IA[pedido.modo].nome)} · ${quando.toLocaleDateString('pt-BR')} ${quando.toTimeString().slice(0, 5)}</p>
+      <p class="ajuda">${esc(ESTADOS_IA[pedido.estado])}${pedido.material ? ` · material: ${esc(pedido.material)}` : ''} · ${esc(pedido.modelo || '')}
+        · ${pedido.entrada_tokens.toLocaleString('pt-BR')} tokens de entrada${pedido.cache_lidos ? ` (+${pedido.cache_lidos.toLocaleString('pt-BR')} do cache)` : ''}, ${pedido.saida_tokens.toLocaleString('pt-BR')} de saída · ${usd(pedido.custo_usd)}${pedido.duracao_ms ? ` · ${Math.round(pedido.duracao_ms / 1000)} s` : ''}</p>
+      ${pedido.erro ? `<p class="erro-form">${esc(pedido.erro)}</p>` : ''}
+    </section>
+    <section class="envolve">
+      <div class="caixa ia-resultado">
+        ${raciocinioHtml ? `<details class="ia-pensamento"><summary>Raciocínio do modelo (resumo)</summary><div class="ia-pensamento-txt nota">${raciocinioHtml}</div></details>` : ''}
+        <div class="ia-saida nota">${conteudoHtml || '<p class="vazio">Sem conteúdo.</p>'}</div>
+        <div class="foco-botoes">
+          ${pedido.assunto && pedido.trilha ? `<button type="button" class="btn" data-acao-url="/api/ia/${pedido.id}/revisao" data-acao-msg="Revisão agendada.">${acao('revisao', 'Agendar revisão do assunto')}</button>` : ''}
+          <a class="btn" href="/ia">${acao('voltar', 'Voltar à IA')}</a>
+          <button type="button" class="btn-x" data-acao-url="/api/ia/${pedido.id}/remover" data-confirmar data-acao-ir="/ia">${acao('excluir', 'Apagar resposta')}</button>
+        </div>
+      </div>
     </section>`,
   });
 }

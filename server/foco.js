@@ -2,6 +2,7 @@
 // recarregar a página, trocar de aparelho ou fechar o navegador; a sessão vencida é fechada sozinha.
 import { db, registrarEvento } from './db.js';
 import { ErroHttp } from './cofres.js';
+import * as revisoes from './revisoes.js';
 
 const SEG = 1000;
 const DIA = 864e5;
@@ -36,6 +37,13 @@ function decorar(s, agora = Date.now()) {
 const ativaSt = db.prepare("SELECT * FROM pomodoros WHERE usuario_id = ? AND estado IN ('rodando', 'pausado')");
 const porIdSt = db.prepare('SELECT * FROM pomodoros WHERE id = ? AND usuario_id = ?');
 
+// Foco concluído com assunto e pelo menos 10 minutos entra nas revisões espaçadas
+// (ou conta como revisão, se o assunto já tinha uma vencida).
+function agendarRevisao(usuarioId, s, segundos) {
+  if (s.tipo !== 'foco' || !s.assunto || segundos < revisoes.MINUTOS_FOCO * 60) return;
+  try { revisoes.registrarEstudo(usuarioId, { trilha: s.trilha, assunto: s.assunto, origem: 'foco' }); } catch (e) { console.error('[revisoes]', e); }
+}
+
 function descrever(s, segundos) {
   const tipo = s.tipo === 'foco' ? 'Foco' : 'Pausa';
   return `${tipo} de ${formatarDuracao(segundos)}${s.assunto ? ` em ${s.assunto}` : ''}`;
@@ -48,6 +56,7 @@ export function finalizarVencidas(usuarioId, agora = Date.now()) {
     if (fim > agora) continue;
     db.prepare("UPDATE pomodoros SET estado = 'concluido', fim = ?, foco_s = ? WHERE id = ? AND estado = 'rodando'").run(fim, s.duracao_s, s.id);
     registrarEvento({ usuarioId, trilha: s.trilha, tipo: 'foco', detalhe: descrever(s, s.duracao_s) });
+    agendarRevisao(usuarioId, s, s.duracao_s);
   }
 }
 
@@ -106,7 +115,10 @@ export function concluir(usuarioId, id, automatico = false) {
   const curta = segundos < 60;
   db.prepare('UPDATE pomodoros SET estado = ?, fim = ?, foco_s = ?, pausado_em = NULL WHERE id = ?')
     .run(curta ? 'cancelado' : 'concluido', Date.now(), segundos, s.id);
-  if (!curta) registrarEvento({ usuarioId, trilha: s.trilha, tipo: 'foco', detalhe: descrever(s, segundos) });
+  if (!curta) {
+    registrarEvento({ usuarioId, trilha: s.trilha, tipo: 'foco', detalhe: descrever(s, segundos) });
+    agendarRevisao(usuarioId, s, segundos);
+  }
   return { sessao: porIdSt.get(s.id, usuarioId), curta };
 }
 
@@ -134,6 +146,7 @@ export function registrarManual(usuarioId, dados, slugsValidos) {
     VALUES (?, ?, ?, 'foco', ?, ?, ?, ?, 'concluido', 1)`)
     .run(usuarioId, trilha, assunto, minutos * 60, inicio, inicio + minutos * 60 * SEG, minutos * 60);
   registrarEvento({ usuarioId, trilha, tipo: 'foco', detalhe: `Registrou à mão: foco de ${formatarDuracao(minutos * 60)}${assunto ? ` em ${assunto}` : ''}` });
+  agendarRevisao(usuarioId, { tipo: 'foco', trilha, assunto }, minutos * 60);
 }
 
 export function remover(usuarioId, id) {

@@ -152,6 +152,80 @@ const MIGRACOES = [
      atualizado INTEGER NOT NULL,
      versao INTEGER NOT NULL DEFAULT 1
    );`,
+  // 7: cronograma semanal (semana-modelo por pessoa), revisões espaçadas e pedidos à IA
+  `CREATE TABLE cronograma_blocos (
+     id INTEGER PRIMARY KEY,
+     usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+     dia INTEGER NOT NULL CHECK (dia BETWEEN 0 AND 6),
+     ordem INTEGER NOT NULL DEFAULT 0,
+     inicio TEXT,
+     minutos INTEGER NOT NULL CHECK (minutos BETWEEN 5 AND 720),
+     trilha TEXT NOT NULL,
+     rotulo TEXT NOT NULL DEFAULT '',
+     fonte TEXT NOT NULL CHECK (fonte IN ('fixo', 'rotacao', 'proxima', 'revisoes')),
+     coluna TEXT,
+     assunto TEXT NOT NULL DEFAULT '',
+     criado INTEGER NOT NULL
+   );
+   CREATE INDEX cronograma_blocos_usuario ON cronograma_blocos(usuario_id, dia, ordem);
+   CREATE TABLE cronograma_feitos (
+     usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+     bloco_id INTEGER NOT NULL REFERENCES cronograma_blocos(id) ON DELETE CASCADE,
+     data TEXT NOT NULL,
+     quando INTEGER NOT NULL,
+     PRIMARY KEY (usuario_id, bloco_id, data)
+   );
+   CREATE TABLE revisoes (
+     id INTEGER PRIMARY KEY,
+     usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+     trilha TEXT NOT NULL,
+     assunto TEXT NOT NULL,
+     chave TEXT NOT NULL,
+     origem TEXT NOT NULL CHECK (origem IN ('foco', 'tarefa', 'questoes', 'manual', 'ia')),
+     ref TEXT,
+     etapa INTEGER NOT NULL DEFAULT 0,
+     proxima TEXT NOT NULL,
+     ultima TEXT NOT NULL,
+     revisoes INTEGER NOT NULL DEFAULT 0,
+     arquivada INTEGER NOT NULL DEFAULT 0,
+     criada INTEGER NOT NULL,
+     UNIQUE (usuario_id, trilha, chave)
+   );
+   CREATE INDEX revisoes_agenda ON revisoes(usuario_id, arquivada, proxima);
+   CREATE TABLE revisoes_log (
+     id INTEGER PRIMARY KEY,
+     revisao_id INTEGER NOT NULL REFERENCES revisoes(id) ON DELETE CASCADE,
+     usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+     quando INTEGER NOT NULL,
+     resultado TEXT NOT NULL,
+     origem TEXT NOT NULL,
+     etapa_antes INTEGER NOT NULL,
+     etapa_depois INTEGER NOT NULL,
+     proxima TEXT NOT NULL
+   );
+   CREATE INDEX revisoes_log_usuario ON revisoes_log(usuario_id, quando DESC);
+   CREATE TABLE ia_pedidos (
+     id INTEGER PRIMARY KEY,
+     usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+     tarefa TEXT NOT NULL CHECK (tarefa IN ('analisar', 'resumir', 'questoes')),
+     modo TEXT NOT NULL CHECK (modo IN ('baixo', 'medio', 'alto')),
+     trilha TEXT,
+     assunto TEXT NOT NULL DEFAULT '',
+     material TEXT,
+     estado TEXT NOT NULL CHECK (estado IN ('rodando', 'ok', 'erro', 'recusado', 'cortado', 'cancelado')),
+     resposta TEXT,
+     raciocinio TEXT,
+     erro TEXT,
+     modelo TEXT,
+     entrada_tokens INTEGER NOT NULL DEFAULT 0,
+     saida_tokens INTEGER NOT NULL DEFAULT 0,
+     cache_lidos INTEGER NOT NULL DEFAULT 0,
+     cache_gravados INTEGER NOT NULL DEFAULT 0,
+     custo_usd REAL NOT NULL DEFAULT 0,
+     criado INTEGER NOT NULL,
+     duracao_ms INTEGER
+   );
+   CREATE INDEX ia_pedidos_usuario ON ia_pedidos(usuario_id, criado DESC);`,
 ];
 
 {

@@ -25,17 +25,22 @@ import * as espaco from './espaco.js';
 import { enviarConfirmacao, emailConfigurado, urlPublica } from './email.js';
 import * as foco from './foco.js';
 import * as caderno from './caderno.js';
+import * as revisoes from './revisoes.js';
+import * as cronograma from './cronograma.js';
+import * as ia from './ia.js';
 import { renderizarNota, renderizarTexto, renderizarEspacoNota } from './markdown.js';
-import { resumir, hojeISO, diasEntre, dataBR, somarDias, nomeCargo } from './resumo.js';
+import { resumir, hojeISO, diasEntre, dataBR, somarDias, nomeCargo, metaPctNa } from './resumo.js';
 import {
   paginaEntrar, paginaInicio, paginaTrilha, paginaNota, paginaErro, paginaFoco, paginaConfiguracoes, paginaCaderno, paginaCadernoEditor,
   paginaMensagem, paginaConvite, paginaConviteManual, paginaCriarConta, paginaGrupo, paginaMembro, paginaPrivacidade,
   paginaEspacos, paginaEspaco, paginaEspacoNota, paginaEspacoNotaEditar,
+  paginaCronograma, paginaCronogramaModelo, paginaRevisoes, paginaIA, paginaIAResultado, htmlQuestoes,
 } from './paginas.js';
 
 process.umask(0o077);
 carregarTrilhas();
 carregarPerfis();
+ia.carregarIA();
 
 // ---------- manutenção ----------
 function manutencao() {
@@ -191,7 +196,68 @@ async function comum(req) {
     cofres.push({ ...t, pct, notas: notas.map((n) => ({ rel: n.rel, titulo: n.tituloCurto, feitas: n.feitas, total: n.total })) });
   }
   const espacos = trilhasTodas(u).filter((t) => t.espaco);
+  u.revisoesPendentes = revisoes.contarPendentes(u.id, slugsDe(u));
   return { usuario: u, trilhas: [...cofres, ...espacos], almas: temaDe(u) === 'pixel' ? almas : null, foco: foco.sessaoAtiva(u.id) };
+}
+
+// ---------- cronograma: rotação, eventos e próxima tarefa de cada trilha ----------
+
+async function contextoCronograma(u) {
+  const saida = [];
+  for (const t of trilhasDe(u)) {
+    const notas = await notasDe(u, t);
+    const estudos = await lerEstudos(t);
+    const rotacoes = new Map();
+    const eventos = [];
+    for (const n of notas.filter((x) => cronograma.ehCronograma(x.rel))) {
+      for (const col of cronograma.rotacoesDaNota(n)) rotacoes.set(`${n.rel}#${col.chave}`, { ...col, nota: n });
+      eventos.push(...cronograma.eventosDaNota(n).map((e) => ({ ...e, rel: n.rel })));
+    }
+    let feita;
+    if (gravaNasNotas(u)) {
+      feita = (n, i) => { const m = RE_TAREFA.exec(n.linhas[i].replace(/\r$/, '')); return !!m && m[2] !== ' '; };
+    } else {
+      const sets = new Map();
+      feita = (n, i) => {
+        if (!sets.has(n.rel)) sets.set(n.rel, feitasNoBanco(u.id, t.slug, n.rel));
+        return sets.get(n.rel).has(n.chavePorLinha.get(i));
+      };
+    }
+    saida.push({ t, estudos, rotacoes, eventos, proxima: cronograma.proximaTarefa(notas, feita) });
+  }
+  for (const e of espaco.listarEspacos(u.id)) {
+    const notas = espaco.notasDoEspaco(u.id, e.id).map((n) => ({ ...n, rel: `nota-${n.id}`, tituloCurto: n.titulo, meta: {} }));
+    const feita = (n, i) => { const m = RE_TAREFA.exec(n.linhas[i]); return !!m && m[2] !== ' '; };
+    saida.push({ t: { slug: espaco.slugEspaco(e.id), nome: e.nome, curto: e.nome }, estudos: null, rotacoes: new Map(), eventos: [], proxima: cronograma.proximaTarefa(notas, feita) });
+  }
+  return saida;
+}
+
+async function semanaDe(u, segunda) {
+  const ctx = await contextoCronograma(u);
+  return cronograma.montarSemana(u.id, segunda, {
+    trilhas: ctx,
+    revisoesPorDia: revisoes.porDia(u.id, slugsDe(u), segunda, somarDias(segunda, 6)),
+    revisoesFeitasHoje: revisoes.feitasNoDia(u.id, hojeISO()),
+  });
+}
+
+// Colunas de rotação que a pessoa pode ligar a um bloco (com o assunto desta semana como exemplo).
+async function opcoesDoModelo(u) {
+  const ctx = await contextoCronograma(u);
+  const colunas = [];
+  const validas = new Map();
+  for (const c of ctx) {
+    for (const [valor, col] of c.rotacoes) {
+      const s = c.estudos?.inicio ? Math.floor(diasEntre(c.estudos.inicio, hojeISO()) / 7) + 1 : null;
+      const exemplo = s != null ? col.semanas.get(s) : '';
+      const nota = col.nota.tituloCurto.length > 48 ? `${col.nota.tituloCurto.slice(0, 47)}…` : col.nota.tituloCurto;
+      colunas.push({ trilha: c.t.slug, valor, rotulo: `${c.t.curto} › ${nota} › ${col.chave}${exemplo ? ` (S${s}: ${exemplo.length > 50 ? `${exemplo.slice(0, 49)}…` : exemplo})` : ''}` });
+      if (!validas.has(c.t.slug)) validas.set(c.t.slug, new Set());
+      validas.get(c.t.slug).add(valor);
+    }
+  }
+  return { escolhas: trilhasTodas(u), colunas, validas };
 }
 
 const textoEvento = (e) => ({ ...e, texto: e.detalhe });
@@ -449,7 +515,8 @@ app.get('/', async (req, res) => {
   }
   const eventos = eventosRecentes(u.id, 10).map(textoEvento);
   const m = grupo.membroDe(u.id);
-  res.send(paginaInicio({ ...(await comum(req)), cards, eventos, totais, streak: grupo.streakDe(u.id), grupoNome: m?.grupo_nome || null }));
+  const diaHoje = (await semanaDe(u, cronograma.segundaDe(hojeISO()))).dias.find((d) => d.hoje) || null;
+  res.send(paginaInicio({ ...(await comum(req)), cards, eventos, totais, streak: grupo.streakDe(u.id), grupoNome: m?.grupo_nome || null, diaHoje }));
 });
 
 app.get('/t/:slug', async (req, res) => {
@@ -513,7 +580,7 @@ async function assuntosPorTrilha(u) {
 
 app.get('/foco', async (req, res) => {
   const u = req.usuario;
-  const trilhas = trilhasDe(u);
+  const trilhas = trilhasTodas(u);
   const assuntos = await assuntosPorTrilha(u);
   const pedida = String(req.query.trilha || '');
   const trilhaInicial = trilhas.find((t) => t.slug === pedida)?.slug || foco.ultimaTrilha(u.id) || trilhas[0]?.slug || '';
@@ -646,7 +713,224 @@ app.post('/api/espaco/:id/nota/:nid/tarefa', (req, res) => {
   const { linha, hash, marcado } = req.body ?? {};
   if (typeof hash !== 'string' || typeof marcado !== 'boolean') throw new ErroHttp(400, 'Pedido incompleto.');
   const r = espaco.alternarTarefaEspaco(req.usuario.id, idDaRota(req), notaDaRota(req), Number(linha), hash, marcado);
+  agendarPelaTarefa(req.usuario, espaco.slugEspaco(idDaRota(req)), r.texto, `nota-${notaDaRota(req)}`, marcado);
   res.json({ ok: true, hash: r.hash, feitas: r.feitas, total: r.total, almas: null });
+});
+
+// ---------- cronograma da semana ----------
+
+const numeroDaRota = (req, mensagem) => {
+  if (!/^\d{1,12}$/.test(req.params.id)) throw new ErroHttp(404, mensagem);
+  return Number(req.params.id);
+};
+
+app.get('/cronograma', async (req, res) => {
+  const u = req.usuario;
+  const pedida = String(req.query.semana || '');
+  const base = /^20\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(pedida) ? pedida : hojeISO();
+  const segunda = cronograma.segundaDe(base);
+  res.send(paginaCronograma({
+    ...(await comum(req)), semana: await semanaDe(u, segunda), temModelo: cronograma.blocosDe(u.id).length > 0,
+    anterior: somarDias(segunda, -7), proxima: somarDias(segunda, 7), ehAtual: segunda === cronograma.segundaDe(hojeISO()),
+  }));
+});
+
+app.get('/cronograma/modelo', async (req, res) => {
+  const u = req.usuario;
+  const { escolhas, colunas } = await opcoesDoModelo(u);
+  res.send(paginaCronogramaModelo({ ...(await comum(req)), blocos: cronograma.blocosDe(u.id), escolhas, colunas }));
+});
+
+app.post('/api/cronograma/blocos', async (req, res) => {
+  const u = req.usuario;
+  const { validas } = await opcoesDoModelo(u);
+  res.json({ ok: true, criados: cronograma.criarBlocos(u.id, req.body ?? {}, slugsDe(u), validas) });
+});
+app.post('/api/cronograma/blocos/:id', async (req, res) => {
+  const u = req.usuario;
+  const { validas } = await opcoesDoModelo(u);
+  cronograma.editarBloco(u.id, numeroDaRota(req, 'Bloco não encontrado.'), req.body ?? {}, slugsDe(u), validas);
+  res.json({ ok: true });
+});
+app.post('/api/cronograma/blocos/:id/remover', (req, res) => {
+  cronograma.removerBloco(req.usuario.id, numeroDaRota(req, 'Bloco não encontrado.'));
+  res.json({ ok: true });
+});
+app.post('/api/cronograma/blocos/:id/mover', (req, res) => {
+  cronograma.moverBloco(req.usuario.id, numeroDaRota(req, 'Bloco não encontrado.'), req.body?.direcao);
+  res.json({ ok: true });
+});
+app.post('/api/cronograma/feito', (req, res) => {
+  const b = req.body ?? {};
+  cronograma.marcarFeito(req.usuario.id, Number(b.bloco), String(b.data || ''), b.feito === true);
+  res.json({ ok: true });
+});
+
+// ---------- revisões espaçadas ----------
+
+app.get('/revisoes', async (req, res) => {
+  const u = req.usuario;
+  const escolhas = trilhasTodas(u);
+  const slugs = escolhas.map((t) => t.slug);
+  const filtro = slugs.includes(String(req.query.trilha || '')) ? String(req.query.trilha) : '';
+  res.send(paginaRevisoes({
+    ...(await comum(req)), lista: revisoes.listar(u.id, slugs), arquivadas: revisoes.listar(u.id, slugs, { arquivadas: true }),
+    ajustes: revisoes.ajustesDe(u.id), escolhas, filtro, feitasHoje: revisoes.feitasNoDia(u.id, hojeISO()),
+  }));
+});
+
+app.post('/api/revisoes', (req, res) => {
+  const r = revisoes.adicionarManual(req.usuario.id, req.body ?? {}, slugsDe(req.usuario));
+  res.json({ ok: true, proxima: r.proxima });
+});
+app.post('/api/revisoes/ajustes', (req, res) => { revisoes.salvarAjustes(req.usuario.id, req.body ?? {}); res.json({ ok: true }); });
+app.post('/api/revisoes/:id/resultado', (req, res) => {
+  const r = revisoes.revisar(req.usuario.id, numeroDaRota(req, 'Revisão não encontrada.'), String(req.body?.resultado || ''));
+  res.json({ ok: true, proxima: r.proxima, etapa: r.etapa });
+});
+app.post('/api/revisoes/:id/adiar', (req, res) => res.json({ ok: true, ...revisoes.adiar(req.usuario.id, numeroDaRota(req, 'Revisão não encontrada.'), req.body?.dias) }));
+app.post('/api/revisoes/:id/arquivar', (req, res) => { revisoes.arquivar(req.usuario.id, numeroDaRota(req, 'Revisão não encontrada.'), true); res.json({ ok: true }); });
+app.post('/api/revisoes/:id/restaurar', (req, res) => { revisoes.arquivar(req.usuario.id, numeroDaRota(req, 'Revisão não encontrada.'), false); res.json({ ok: true }); });
+app.post('/api/revisoes/:id/remover', (req, res) => { revisoes.remover(req.usuario.id, numeroDaRota(req, 'Revisão não encontrada.')); res.json({ ok: true }); });
+
+// ---------- IA ----------
+
+// Material de referência: nota de um cofre visível ou nota do próprio Meu espaço.
+async function lerMaterial(u, slug, valor) {
+  const m = /^(nota|espaco):(.{1,400})$/.exec(valor);
+  if (!m) throw new ErroHttp(400, 'Material inválido.');
+  if (m[1] === 'nota') {
+    const t = acharTrilha(slug);
+    if (!t || !podeVerTrilha(u, t.slug) || !podeVerArquivo(u, t.slug, m[2])) throw new ErroHttp(404, 'Nota não encontrada.');
+    const nota = await lerNota(t, m[2]);
+    return { titulo: nota.tituloCurto, texto: nota.corpo, origem: `nota do cofre ${t.nome}` };
+  }
+  const eid = espaco.idDoSlug(slug);
+  if (!eid || !/^\d{1,12}$/.test(m[2])) throw new ErroHttp(404, 'Nota não encontrada.');
+  const n = espaco.obterNota(u.id, eid, Number(m[2]));
+  return { titulo: n.titulo, texto: n.texto, origem: 'nota do Meu espaço' };
+}
+
+async function pedidoIA(u, b) {
+  const tarefa = String(b.tarefa || '');
+  const modo = String(b.modo || '');
+  if (!Object.hasOwn(ia.TAREFAS, tarefa)) throw new ErroHttp(400, 'Escolha a tarefa.');
+  if (!Object.hasOwn(ia.MODOS, modo)) throw new ErroHttp(400, 'Escolha o modo de raciocínio.');
+  const slug = String(b.trilha || '');
+  const trilha = slug ? trilhasTodas(u).find((t) => t.slug === slug) : null;
+  if (slug && !trilha) throw new ErroHttp(400, 'Trilha inválida.');
+  const assunto = String(b.assunto || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+  const cofre = trilha && !trilha.espaco ? acharTrilha(slug) : null;
+  const estudos = cofre ? estudosDe(u, cofre, await lerEstudos(cofre)) : null;
+  let material = null;
+  if (b.material) {
+    const m = await lerMaterial(u, slug, String(b.material));
+    const r = ia.recortarMaterial(m.texto, String(b.secao || ''));
+    if (!r.texto) throw new ErroHttp(400, 'O material escolhido está vazio.');
+    ia.conferirTamanho(r.texto);
+    material = { ...m, texto: r.texto, secao: r.secao };
+  }
+  if (!assunto && !material) throw new ErroHttp(400, 'Escreva o assunto ou escolha um material de referência.');
+  const cargos = Object.keys(estudos?.cargos || {});
+  const cargo = cargos.includes(String(b.cargo)) ? nomeCargo(String(b.cargo)) : cargos.length === 1 ? nomeCargo(cargos[0]) : '';
+  const pedido = ia.montarPedido({
+    tarefa, modo, assunto, trilha, concurso: estudos?.concurso || '', cargo,
+    estilo: Object.hasOwn(ia.ESTILOS, b.estilo) ? String(b.estilo) : ia.estiloDe(estudos),
+    quantidade: ia.QUANTIDADES.includes(Number(b.quantidade)) ? Number(b.quantidade) : 5,
+    dificuldade: Object.hasOwn(ia.DIFICULDADES, b.dificuldade) ? String(b.dificuldade) : 'misto',
+    material,
+  });
+  const info = { tarefa, modo, trilha: slug || null, assunto, material: material ? `${material.titulo}${material.secao ? ` › ${material.secao}` : ''}` : null };
+  return { pedido, info };
+}
+
+app.get('/ia', async (req, res) => {
+  const u = req.usuario;
+  const estado = ia.estadoIA(u);
+  const materiais = [];
+  const dados = { trilhas: {}, podeGerar: estado.podeGerar, modos: Object.fromEntries(Object.entries(ia.MODOS).map(([k, m]) => [k, m.descricao])) };
+  for (const t of trilhasDe(u)) {
+    for (const n of await notasDe(u, t)) materiais.push({ trilha: t.slug, valor: `nota:${n.rel}`, titulo: n.tituloCurto });
+    const estudos = estudosDe(u, t, await lerEstudos(t));
+    dados.trilhas[t.slug] = { estilo: ia.estiloDe(estudos), cargos: Object.keys(estudos?.cargos || {}).map((c) => ({ chave: c, nome: nomeCargo(c) })) };
+  }
+  for (const e of espaco.listarEspacos(u.id)) {
+    const slug = espaco.slugEspaco(e.id);
+    for (const n of espaco.notasDoEspaco(u.id, e.id)) materiais.push({ trilha: slug, valor: `espaco:${n.id}`, titulo: n.titulo });
+    dados.trilhas[slug] = { estilo: 'tecnico', cargos: [] };
+  }
+  const escolhas = trilhasTodas(u);
+  const ultima = foco.ultimaTrilha(u.id);
+  res.send(paginaIA({
+    ...(await comum(req)), estado, escolhas, materiais, assuntos: await assuntosPorTrilha(u), dados,
+    trilhaInicial: escolhas.some((t) => t.slug === ultima) ? ultima : escolhas[0]?.slug || '',
+    historico: ia.historico(u.id), gasto: ia.gastoDoMes(), hojeN: ia.pedidosHoje(u.id), regras: ia.regras(),
+  }));
+});
+
+app.get('/ia/:id', async (req, res) => {
+  const p = ia.obterPedido(req.usuario.id, numeroDaRota(req, 'Resposta não encontrada.'));
+  const questoes = p.tarefa === 'questoes' && p.estado === 'ok' ? ia.questoesDe(p) : null;
+  res.send(paginaIAResultado({
+    ...(await comum(req)), pedido: p,
+    conteudoHtml: questoes ? htmlQuestoes(questoes) : p.resposta ? renderizarTexto(p.resposta) : '',
+    raciocinioHtml: p.raciocinio ? renderizarTexto(p.raciocinio) : '',
+  }));
+});
+
+app.get('/api/ia/secoes', async (req, res) => {
+  const valor = String(req.query.material || '');
+  if (!valor) return res.json({ secoes: [] });
+  const m = await lerMaterial(req.usuario, String(req.query.trilha || ''), valor);
+  res.json({ secoes: ia.secoesDoTexto(m.texto).map(({ id, titulo, nivel }) => ({ id, titulo, nivel })), caracteres: m.texto.length });
+});
+
+app.post('/api/ia/prompt', async (req, res) => {
+  const { pedido } = await pedidoIA(req.usuario, req.body ?? {});
+  res.json({ ok: true, prompt: pedido.previa, parametros: pedido.parametros });
+});
+
+// Resposta em NDJSON: uma linha por evento ("texto", "pensando", "ping", "fim" ou "erro"), para mostrar a
+// resposta enquanto ela é escrita e manter a conexão viva durante o raciocínio longo.
+app.post('/api/ia/gerar', async (req, res) => {
+  const u = req.usuario;
+  ia.exigirPodeGerar(u);
+  const { pedido, info } = await pedidoIA(u, req.body ?? {});
+  res.status(200).set({ 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
+  res.flushHeaders();
+  const enviar = (o) => { if (!res.writableEnded) res.write(`${JSON.stringify(o)}\n`); };
+  const controle = new AbortController();
+  res.on('close', () => { if (!res.writableFinished) controle.abort(); });
+  const ping = setInterval(() => enviar({ t: 'ping' }), 15000);
+  enviar({ t: 'inicio', parametros: pedido.parametros });
+  try {
+    const r = await ia.gerar(u.id, pedido, info, {
+      aoTexto: (d) => enviar({ t: 'texto', d }), aoPensar: (d) => enviar({ t: 'pensando', d }), signal: controle.signal,
+    });
+    if (['ok', 'cortado', 'recusado'].includes(r.estado)) {
+      enviar({
+        t: 'fim', id: r.id, estado: r.estado, erro: r.erro, modelo: r.modelo, custo: r.custo,
+        html: r.questoes ? htmlQuestoes(r.questoes) : renderizarTexto(r.resposta || ''),
+        raciocinio: r.raciocinio ? renderizarTexto(r.raciocinio) : '',
+        uso: { entrada: r.uso?.input_tokens || 0, saida: r.uso?.output_tokens || 0, cache: r.uso?.cache_read_input_tokens || 0 },
+      });
+    } else {
+      enviar({ t: 'erro', id: r.id, erro: r.erro });
+    }
+  } finally {
+    clearInterval(ping);
+    res.end();
+  }
+});
+
+app.post('/api/ia/:id/remover', (req, res) => { ia.removerPedido(req.usuario.id, numeroDaRota(req, 'Resposta não encontrada.')); res.json({ ok: true }); });
+app.post('/api/ia/:id/revisao', (req, res) => {
+  const u = req.usuario;
+  const p = ia.obterPedido(u.id, numeroDaRota(req, 'Resposta não encontrada.'));
+  const assunto = p.assunto || p.material;
+  if (!p.trilha || !assunto || !slugsDe(u).includes(p.trilha)) throw new ErroHttp(400, 'Esta resposta não tem trilha e assunto para agendar.');
+  const r = revisoes.registrarEstudo(u.id, { trilha: p.trilha, assunto, origem: 'ia', ref: `ia-${p.id}` });
+  res.json({ ok: true, proxima: r?.proxima || null });
 });
 
 app.get('/conta', (req, res) => res.redirect(301, '/configuracoes'));
@@ -654,7 +938,7 @@ app.get('/configuracoes', async (req, res) => {
   const u = req.usuario;
   res.send(paginaConfiguracoes({
     ...(await comum(req)), conta: dadosDaConta(u.id), emailPendente: emailPendenteDe(u.id), membro: grupo.membroDe(u.id),
-    usuarios: u.dono ? listarUsuarios() : null, perfis: nomesPerfis(), emailAtivo: emailConfigurado(),
+    usuarios: u.dono ? listarUsuarios() : null, perfis: nomesPerfis(), emailAtivo: emailConfigurado(), ajustesRevisoes: revisoes.ajustesDe(u.id),
   }));
 });
 
@@ -672,12 +956,35 @@ app.get('/configuracoes/meus-dados.json', (req, res) => {
     progresso: tudo('SELECT * FROM progresso WHERE usuario_id = ?'),
     eventos: tudo('SELECT * FROM eventos WHERE usuario_id = ?'),
     consentimentos: tudo('SELECT * FROM consentimentos WHERE usuario_id = ?'),
+    cronograma_blocos: tudo('SELECT * FROM cronograma_blocos WHERE usuario_id = ?'),
+    cronograma_feitos: tudo('SELECT * FROM cronograma_feitos WHERE usuario_id = ?'),
+    revisoes: tudo('SELECT * FROM revisoes WHERE usuario_id = ?'),
+    revisoes_log: tudo('SELECT * FROM revisoes_log WHERE usuario_id = ?'),
+    ia_pedidos: tudo('SELECT * FROM ia_pedidos WHERE usuario_id = ?'),
   };
   res.set({ 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="meus-dados-ayo-std-${hojeISO()}.json"` });
   res.send(JSON.stringify(dados, null, 2));
 });
 
 // ---------- API: tarefas, questões, ritmo ----------
+
+// Tarefa marcada vira revisão espaçada; desmarcada, some a revisão que ainda não foi feita nenhuma vez.
+function agendarPelaTarefa(u, slug, texto, ref, marcado) {
+  try {
+    if (marcado) revisoes.registrarEstudo(u.id, { trilha: slug, assunto: texto, origem: 'tarefa', ref });
+    else revisoes.desfazerTarefa(u.id, { trilha: slug, assunto: texto, ref });
+  } catch (e) { console.error('[revisoes]', e); }
+}
+
+// Questões do tópico (ou da matéria): abaixo da meta da semana, o assunto volta amanhã.
+function agendarPelasQuestoes(u, t, r) {
+  if (/^reda[çc][ãa]o/i.test(r.materia)) return;
+  lerEstudos(t).then((estudos) => {
+    const meta = metaPctNa(estudos, r.data) ?? 70;
+    const pct = r.questoes ? (100 * r.acertos) / r.questoes : 0;
+    revisoes.registrarEstudo(u.id, { trilha: t.slug, assunto: r.topico || r.materia, origem: 'questoes', desempenho: pct < meta ? 'ruim' : 'bom' });
+  }).catch((e) => console.error('[revisoes]', e));
+}
 
 app.post('/api/t/:slug/tarefa', async (req, res) => {
   const u = req.usuario;
@@ -710,6 +1017,7 @@ app.post('/api/t/:slug/tarefa', async (req, res) => {
     usuarioId: u.id, trilha: t.slug, tipo: 'tarefa', arquivo,
     detalhe: `${marcado ? 'Concluiu' : 'Desmarcou'}: ${texto.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[*_`#]/g, '').slice(0, 140)}`,
   });
+  agendarPelaTarefa(u, t.slug, texto, arquivo, marcado);
   res.json({ ok: true, hash: novoHash, feitas, total, almas: temaDe(u) === 'pixel' ? await contarAlmas(u) : null });
 });
 
@@ -719,6 +1027,7 @@ app.post('/api/t/:slug/registro', async (req, res) => {
   const { erro, registro } = validarRegistro(req.body ?? {}, await lerEstudos(t), cargosPermitidos(u, t.slug));
   if (erro) throw new ErroHttp(400, erro);
   await adicionarRegistro(t, registro);
+  agendarPelasQuestoes(u, t, registro);
   registrarEvento({
     usuarioId: u.id, trilha: t.slug, tipo: 'registro', arquivo: 'registro-questoes.csv',
     detalhe: `Registrou ${registro.acertos}/${registro.questoes} em ${registro.materia} (${nomeCargo(registro.cargo)})`,

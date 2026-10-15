@@ -1,8 +1,8 @@
 {
   "name": "ayo-std",
-  "version": "1.0.0",
+  "version": "1.9.0",
   "private": true,
-  "description": "Ayo Std: painel de estudos que une os cofres do Obsidian (Dev, ENEM, Manaus Previdência e BB).",
+  "description": "Ayo Std: painel de estudos que une os cofres do Obsidian (Dev, Carreira, ENEM, Manaus Previdência e BB), com cronograma semanal, revisões espaçadas e IA.",
   "type": "module",
   "engines": {
     "node": ">=22.13"
@@ -16,9 +16,11 @@
     "gerar-carreira": "node server/scripts/gerar-trilha-carreira.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "express": "^5.2.1",
     "markdown-it": "^14.3.2",
-    "nodemailer": "^10.0.13"
+    "nodemailer": "^10.0.13",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@fontsource/jacquard-24": "^5.3.0",

@@ -67,7 +67,7 @@ export function removerEspaco(usuarioId, id) {
 
 function decorarNota(n) {
   const a = analisarNota(n.texto);
-  return { ...n, feitas: a.feitas, total: a.total, secoes: a.secoes, linhas: a.linhas, corpo: a.corpo };
+  return { ...n, feitas: a.feitas, total: a.total, secoes: a.secoes, linhas: a.linhas, corpo: a.corpo, chavePorLinha: a.chavePorLinha };
 }
 
 export function notasDoEspaco(usuarioId, espacoId) {

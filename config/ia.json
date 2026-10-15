@@ -1,0 +1,13 @@
+{
+  "ativa": true,
+  "modelo": "claude-opus-5-5",
+  "esforco": { "baixo": "low", "medio": "medium", "alto": "high" },
+  "maxTokens": 64000,
+  "perfis": ["completo"],
+  "limiteDiarioPorPessoa": 40,
+  "orcamentoMensalUSD": 15,
+  "maxCaracteresMaterial": 80000,
+  "precosUSDporMilhao": {
+    "claude-opus-5-5": { "entrada": 4, "saida": 20, "cacheLeitura": 0.2, "cacheEscrita": 5 }
+  }
+}

@@ -22,6 +22,13 @@ const porFase = (valor, semana) => {
   return (achado || valor[valor.length - 1])[1];
 };
 
+// Semana do plano (S1 começa em estudos.json "inicio") e a meta de % de acerto que vale nela.
+export const semanaDoPlano = (estudos, iso = hojeISO()) => (estudos?.inicio ? Math.floor(diasEntre(estudos.inicio, iso) / 7) + 1 : null);
+export function metaPctNa(estudos, iso = hojeISO()) {
+  const s = semanaDoPlano(estudos, iso);
+  return s == null ? null : porFase(estudos.meta_pct || [[99, 70]], Math.max(1, s));
+}
+
 const NOMES_CARGO = {
   informatica: 'Técnico de Informática',
   administrativa: 'Técnico Administrativo',

@@ -163,8 +163,10 @@ md.renderer.rules.code_inline = (tokens, i, _o, env) => {
   if (/^(~\/|\/)/.test(conteudo) && env.trilhas) {
     const abs = path.resolve(conteudo.replace(/^~(?=\/)/, os.homedir()));
     for (const t of env.trilhas) {
-      if (abs.startsWith(t.pasta + path.sep)) {
-        const rel = abs.slice(t.pasta.length + 1).split(path.sep).join('/');
+      // vale também o endereço antigo do cofre (as notas citam caminhos de antes da mudança de pasta)
+      const raiz = [t.pasta, ...(t.pastas || [])].find((p) => abs.startsWith(p + path.sep));
+      if (raiz) {
+        const rel = abs.slice(raiz.length + 1).split(path.sep).join('/');
         if (env.podeVer && !env.podeVer(t.slug, rel)) return html;
         return `<a class="ref-arquivo" href="${rotaDeArquivo(env, rel, t.slug)}">${html}</a>`;
       }

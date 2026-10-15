@@ -730,6 +730,63 @@
     });
   }
 
+  // ---------- cronograma: semana-modelo e blocos feitos ----------
+  ligarForm('form[data-form="crono-bloco"]', '/api/cronograma/blocos', {
+    antes: (d, f) => { d.dias = $$('input[name="dias"]:checked', f).map((c) => Number(c.value)); d.minutos = Number(d.minutos); },
+    mensagem: (d) => `Bloco adicionado em ${d.dias.length} ${d.dias.length === 1 ? 'dia' : 'dias'}.`,
+  });
+  ligarForm('form[data-form="crono-bloco-editar"]', (f) => `/api/cronograma/blocos/${f.dataset.id}`, {
+    antes: (d) => { d.minutos = Number(d.minutos); },
+    mensagem: 'Bloco salvo.',
+  });
+  // Os campos do bloco dependem de onde vem o assunto e da trilha escolhida.
+  $$('.form-bloco').forEach((form) => {
+    const trilha = $('[data-bloco-trilha]', form);
+    const coluna = $('[data-bloco-coluna]', form);
+    const ajustar = () => {
+      const fonte = $('input[name="fonte"]:checked', form)?.value;
+      $$('[data-campo-fonte]', form).forEach((el) => { el.hidden = el.dataset.campoFonte !== fonte; });
+      if (!coluna) return;
+      let primeira = null;
+      $$('option', coluna).forEach((o) => {
+        const serve = !o.dataset.trilha || o.dataset.trilha === trilha.value;
+        o.hidden = !serve;
+        o.disabled = !serve;
+        if (serve && !primeira) primeira = o;
+      });
+      if (!coluna.selectedOptions[0] || coluna.selectedOptions[0].disabled) coluna.value = primeira ? primeira.value : '';
+    };
+    form.addEventListener('change', ajustar);
+    ajustar();
+  });
+  document.addEventListener('change', async (e) => {
+    const cb = e.target.closest('input[data-crono-feito]');
+    if (!cb) return;
+    cb.disabled = true;
+    try {
+      await api('/api/cronograma/feito', { bloco: Number(cb.dataset.cronoFeito), data: cb.dataset.data, feito: cb.checked });
+      cb.closest('.bloco')?.classList.toggle('feito', cb.checked);
+      if (cb.checked) maisUm(cb, '✓');
+    } catch (err) {
+      cb.checked = !cb.checked;
+      avisar(err.message, true);
+    } finally {
+      cb.disabled = false;
+    }
+  });
+
+  // ---------- revisões espaçadas ----------
+  ligarForm('form[data-form="revisao-nova"]', '/api/revisoes', { mensagem: (d) => `Revisões agendadas: ${d.assunto}.` });
+  ligarForm('form[data-form="revisoes-ajustes"]', '/api/revisoes/ajustes', {
+    antes: (d, f) => {
+      const escolhido = $('input[name="preset"]:checked', f);
+      const texto = escolhido?.dataset.intervalos || String(d.personalizado || '');
+      d.intervalos = texto.split(/[\s,;]+/).filter(Boolean).map(Number);
+    },
+    mensagem: 'Revisões ajustadas.',
+  });
+  $$('select[data-enviar-ao-mudar]').forEach((s) => s.addEventListener('change', () => s.form.submit()));
+
   pintarMedidores();
   const pendente = sessionStorage.getItem('ayo-aviso');
   if (pendente) { sessionStorage.removeItem('ayo-aviso'); avisar(pendente); }
