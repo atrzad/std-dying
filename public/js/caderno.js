@@ -1,482 +1,769 @@
-// Ayo Std: editor do caderno. Texto (simples ou Markdown) + folha de caneta com pressão.
-// Salva sozinho; cada gravação leva a versão, e o servidor recusa se outra aba já tiver mudado a anotação.
+// std(dying), Caderno: explorador, editor, leitura, busca, tags, links, grafo e paleta (o antigo Ayo Sketchbook).
+// Fala só com /api/caderno; as rotas da página ficam em /caderno, /caderno/n/…, /caderno/d/… e /caderno/grafo.
 (() => {
-  const raiz = document.querySelector('[data-caderno]');
-  if (!raiz) return;
-  const $ = (s, el = raiz) => el.querySelector(s);
-  const $$ = (s, el = raiz) => [...el.querySelectorAll(s)];
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+  const app = $('[data-app]');
+  if (!app) return;
+  const corpo = document.body;
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const urlCaminho = (rel) => rel.split('/').map(encodeURIComponent).join('/');
+  const semAcento = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const ehCelular = () => matchMedia('(max-width: 900px)').matches;
 
-  async function api(url, dados) {
-    let resp;
+  async function api(url, dados, metodo = 'POST') {
+    let r;
     try {
-      resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Ayo': '1' },
-        body: JSON.stringify(dados ?? {}),
-        credentials: 'same-origin',
+      r = await fetch(url, metodo === 'GET' ? { credentials: 'same-origin' } : {
+        method: metodo, credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Ayo': '1' }, body: JSON.stringify(dados ?? {}),
       });
-    } catch {
-      throw Object.assign(new Error('Sem conexão com o servidor.'), { status: 0 });
-    }
-    let corpo = {};
-    try { corpo = await resp.json(); } catch {}
-    if (!resp.ok) throw Object.assign(new Error(corpo.erro || `Erro ${resp.status}.`), { status: resp.status });
-    return corpo;
+    } catch { throw Object.assign(new Error('Sem conexão com o servidor.'), { status: 0 }); }
+    let j = {};
+    try { j = await r.json(); } catch {}
+    if (r.status === 401) { location.href = '/entrar'; }
+    if (!r.ok) throw Object.assign(new Error(j.erro || `Erro ${r.status}.`), { status: r.status });
+    return j;
   }
+  const obter = (url) => api(url, null, 'GET');
 
   function avisar(texto, erro = false) {
-    const el = document.getElementById('aviso');
-    if (!el) return;
-    el.textContent = texto;
-    el.classList.toggle('erro', erro);
-    el.classList.add('mostrar');
-    clearTimeout(avisar.t);
-    avisar.t = setTimeout(() => el.classList.remove('mostrar'), erro ? 6000 : 3000);
+    const el = $('#aviso');
+    el.textContent = texto; el.classList.toggle('erro', erro); el.classList.add('mostrar');
+    clearTimeout(avisar.t); avisar.t = setTimeout(() => el.classList.remove('mostrar'), erro ? 6000 : 2800);
   }
 
   // ---------- estado ----------
-  const LARGURA = 1000;
-  const ALTURA_PAGINA = 1400;
-  const LINHA = 44;
-  let desenho;
-  try { desenho = JSON.parse(document.getElementById('desenho-dados').textContent); } catch { desenho = null; }
-  let tracos = desenho?.tracos || [];
-  let altura = desenho?.altura || ALTURA_PAGINA;
-  let id = raiz.dataset.id ? Number(raiz.dataset.id) : null;
-  let versao = Number(raiz.dataset.versao) || 0;
+  const fonte = $('[data-fonte]');
+  const leitura = $('[data-leitura]');
+  const estado = $('[data-estado]');
+  let arvore = [];
+  let indice = { notas: [], arquivos: [], tags: [] };
+  let abertas = new Set();
+  let atual = null; // { tipo: 'nota'|'desenho'|'imagem'|'grafo', rel, hash }
+  let sujo = false, salvando = false, conflito = false, timerSalvar = null, timerRender = null;
+  let desenhoAberto = null;
+  let prefs = {};
 
-  // ---------- salvamento automático ----------
-  const status = $('[data-status]');
-  let sujo = false;
-  let salvando = false;
-  let travado = false;
-  let timer = null;
+  const salvarPrefs = (() => { let t; return (p) => { Object.assign(prefs, p); clearTimeout(t); t = setTimeout(() => api('/api/caderno/preferencias', prefs).catch(() => {}), 800); }; })();
 
-  const campos = () => ({
-    titulo: $('[name="titulo"]').value,
-    data: $('[name="data"]').value,
-    trilha: $('[name="trilha"]').value,
-    assunto: $('[name="assunto"]').value,
-    formato: $('[name="formato"]:checked').value,
-    texto: $('[name="texto"]').value,
-    desenho: tracos.length ? { v: 1, altura, tracos } : null,
-  });
-  const vazio = (c) => !c.titulo.trim() && !c.texto.trim() && !c.desenho;
+  function mostrarEstado(tipo, texto) { estado.dataset.tipo = tipo; estado.textContent = texto; }
 
-  function marcarSujo(atraso = 1200) {
-    if (travado) return;
-    sujo = true;
-    status.textContent = 'Alterações não salvas';
-    status.dataset.estado = 'sujo';
-    clearTimeout(timer);
-    timer = setTimeout(salvar, atraso);
-  }
-
-  async function salvar() {
-    if (travado || !sujo) return;
-    if (salvando) { clearTimeout(timer); timer = setTimeout(salvar, 600); return; }
-    const c = campos();
-    if (!id && vazio(c)) return;
-    salvando = true;
-    sujo = false;
-    status.textContent = 'Salvando…';
-    status.dataset.estado = 'salvando';
-    try {
-      const r = id ? await api(`/api/caderno/${id}`, { ...c, versao }) : await api('/api/caderno', c);
-      if (!id) {
-        id = r.id;
-        raiz.dataset.id = String(id);
-        history.replaceState(null, '', `/caderno/${id}`);
-      }
-      versao = r.versao;
-      const hora = new Date(r.atualizado).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      if (!sujo) { status.textContent = `Salvo às ${hora}`; status.dataset.estado = 'salvo'; }
-    } catch (err) {
-      if (err.status === 409) {
-        travado = true;
-        status.textContent = 'Conflito: mudou em outra aba';
-        status.dataset.estado = 'erro';
-        avisar('Esta anotação foi alterada em outra aba ou aparelho. Copie o que escreveu aqui e recarregue a página.', true);
-      } else {
-        sujo = true;
-        status.textContent = 'Não salvou; tentando de novo…';
-        status.dataset.estado = 'erro';
-        if (err.status === 413 || err.status === 400) { travado = true; avisar(err.message, true); }
-        else { clearTimeout(timer); timer = setTimeout(salvar, 5000); }
-      }
-    } finally {
-      salvando = false;
+  // ---------- árvore ----------
+  const svg = (d) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const ICONES = {
+    nota: svg('<path d="M6 2h8l5 5v15H6Zm8 0v5h5M9 12h7m-7 4h7"/>'),
+    desenho: svg('<path d="m15 4 5 5-9 9H6v-5Z"/><path d="M3 21c3-2 5 1 8-1s5-1 7 0"/>'),
+    imagem: svg('<rect x="3" y="4" width="18" height="16" rx="1"/><circle cx="9" cy="10" r="2"/><path d="m3 18 6-5 4 3 3-2 5 4"/>'),
+    pdf: svg('<path d="M6 2h8l5 5v15H6Zm8 0v5h5"/><path d="M9 17v-4h2a1.5 1.5 0 0 1 0 3H9"/>'),
+  };
+  function itemArvore(n) {
+    if (n.tipo === 'pasta') {
+      const aberta = abertas.has(n.caminho);
+      return `<li class="pasta${aberta ? ' aberta' : ''}" data-caminho="${esc(n.caminho)}" data-tipo="pasta" role="treeitem" aria-expanded="${aberta}">
+        <button type="button" class="item" draggable="true"><span class="tipo"></span><span class="nome">${esc(n.nome)}</span></button>
+        ${aberta ? `<ul role="group">${n.filhos.map(itemArvore).join('')}</ul>` : ''}</li>`;
     }
+    const nome = n.tipo === 'nota' ? n.nome.replace(/\.md$/i, '') : n.tipo === 'desenho' ? n.nome.replace(/\.sketch\.json$/i, '') : n.nome;
+    return `<li data-caminho="${esc(n.caminho)}" data-tipo="${n.tipo}" role="treeitem">
+      <button type="button" class="item${atual?.rel === n.caminho ? ' ativo' : ''}" draggable="true"><span class="tipo">${ICONES[n.tipo] || ''}</span><span class="nome">${esc(nome)}</span></button></li>`;
+  }
+  function desenharArvore() {
+    $('[data-arvore]').innerHTML = arvore.length ? arvore.map(itemArvore).join('') : '<li class="vazio">Cofre vazio. Crie uma nota.</li>';
+  }
+  async function recarregar() {
+    const [a, i] = await Promise.all([obter('/api/caderno/arvore'), obter('/api/caderno/indice')]);
+    arvore = a.arvore; indice = i;
+    desenharArvore(); desenharTags();
   }
 
-  // Ao sair com algo não salvo, o navegador pergunta antes de fechar.
-  addEventListener('beforeunload', (e) => {
-    if (sujo || salvando) { salvar(); e.preventDefault(); e.returnValue = ''; }
+  $('[data-arvore]').addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-caminho]');
+    if (!li) return;
+    if (li.dataset.tipo === 'pasta') {
+      abertas.has(li.dataset.caminho) ? abertas.delete(li.dataset.caminho) : abertas.add(li.dataset.caminho);
+      salvarPrefs({ abertas: [...abertas] });
+      desenharArvore();
+    } else abrir(li.dataset.caminho);
   });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && sujo) salvar(); });
-
-  $$('[name="titulo"], [name="data"], [name="assunto"], [name="texto"]').forEach((el) => el.addEventListener('input', () => marcarSujo()));
-  $('[name="trilha"]').addEventListener('change', (e) => {
-    $('[name="assunto"]').setAttribute('list', `assuntos-${e.target.value}`);
-    [...document.body.classList].filter((c) => c.startsWith('t-')).forEach((c) => document.body.classList.remove(c));
-    document.body.classList.add(`t-${e.target.value || 'inicio'}`);
-    marcarSujo(300);
-  });
-
-  // ---------- abas ----------
-  function abrirAba(nome) {
-    raiz.dataset.aba = nome;
-    $$('[data-aba-botao]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.abaBotao === nome)));
-    $$('[data-painel]').forEach((p) => { p.hidden = p.dataset.painel !== nome; });
-    if (nome === 'caneta') ajustarFolha();
-  }
-  $$('[data-aba-botao]').forEach((b) => b.addEventListener('click', () => abrirAba(b.dataset.abaBotao)));
-
-  // ---------- texto ----------
-  const area = $('[name="texto"]');
-  const previa = $('[data-previa]');
-  const botaoPrevia = $('[data-previa-botao]');
-  function crescer() { area.style.height = 'auto'; area.style.height = `${Math.max(320, area.scrollHeight + 4)}px`; }
-  area.addEventListener('input', crescer);
-  crescer();
-  $$('[name="formato"]').forEach((r) => r.addEventListener('change', () => {
-    const md = r.value === 'md';
-    botaoPrevia.hidden = !md;
-    area.classList.toggle('simples', !md);
-    if (!md) { previa.hidden = true; area.hidden = false; botaoPrevia.textContent = 'Visualizar'; }
-    marcarSujo(300);
-  }));
-  // Tab insere recuo em vez de sair do campo
-  area.addEventListener('keydown', (e) => {
-    if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+  $('[data-arvore]').addEventListener('contextmenu', (e) => {
+    const li = e.target.closest('li[data-caminho]');
+    if (!li) return;
     e.preventDefault();
-    const { selectionStart: a, selectionEnd: b, value: v } = area;
-    area.value = `${v.slice(0, a)}  ${v.slice(b)}`;
-    area.selectionStart = area.selectionEnd = a + 2;
-    marcarSujo();
+    menuDoItem(li.dataset.caminho, li.dataset.tipo, e.clientX, e.clientY);
   });
-  botaoPrevia.addEventListener('click', async () => {
-    if (!previa.hidden) {
-      previa.hidden = true; area.hidden = false; botaoPrevia.textContent = 'Visualizar'; area.focus();
-      return;
-    }
-    botaoPrevia.disabled = true;
-    try {
-      const r = await api('/api/caderno/previa', { texto: area.value });
-      previa.innerHTML = r.html || '<p class="vazio">Nada escrito ainda.</p>';
-      previa.hidden = false; area.hidden = true; botaoPrevia.textContent = 'Editar';
-    } catch (err) {
-      avisar(err.message, true);
-    } finally {
-      botaoPrevia.disabled = false;
-    }
+  // arrastar arquivo para dentro de uma pasta (ou para a raiz)
+  let arrastado = null;
+  $('[data-arvore]').addEventListener('dragstart', (e) => { arrastado = e.target.closest('li[data-caminho]')?.dataset.caminho || null; });
+  $('[data-arvore]').addEventListener('dragover', (e) => {
+    if (!arrastado) return;
+    e.preventDefault();
+    $$('.arrastando-sobre').forEach((x) => x.classList.remove('arrastando-sobre'));
+    e.target.closest('li[data-tipo="pasta"]')?.classList.add('arrastando-sobre');
   });
-
-  // ---------- caneta ----------
-  const folha = $('[data-folha]');
-  const canvas = $('[data-canvas]');
-  const ctx = canvas.getContext('2d');
-  let escala = 1;
-  let ferramenta = 'caneta';
-  const corAtiva = { caneta: '#1d1d1f', marca: '#ffd54f' };
-  let espessura = 3.5;
-  let soCaneta = false;
-  try { soCaneta = localStorage.getItem('ayo-so-caneta') === 'sim'; } catch {}
-  const caixaSoCaneta = $('[data-so-caneta]');
-  caixaSoCaneta.checked = soCaneta;
-  caixaSoCaneta.addEventListener('change', () => {
-    soCaneta = caixaSoCaneta.checked;
-    try { localStorage.setItem('ayo-so-caneta', soCaneta ? 'sim' : 'nao'); } catch {}
+  $('[data-arvore]').addEventListener('drop', async (e) => {
+    if (!arrastado) return;
+    e.preventDefault();
+    $$('.arrastando-sobre').forEach((x) => x.classList.remove('arrastando-sobre'));
+    const pasta = e.target.closest('li[data-tipo="pasta"]')?.dataset.caminho || '';
+    const nome = arrastado.split('/').pop();
+    const para = pasta ? `${pasta}/${nome}` : nome;
+    const de = arrastado;
+    arrastado = null;
+    if (para === de || para.startsWith(`${de}/`)) return;
+    await moverArquivo(de, para);
   });
 
-  $$('.cor').forEach((b) => { b.style.background = b.dataset.cor; });
-  $$('[name="ferramenta"]').forEach((r) => r.addEventListener('change', () => {
-    ferramenta = r.value;
-    $$('[data-cores]').forEach((g) => { g.hidden = g.dataset.cores !== (ferramenta === 'marca' ? 'marca' : 'caneta'); });
-    folha.classList.toggle('apagando', ferramenta === 'borracha');
-  }));
-  $$('[data-cores]').forEach((grupo) => grupo.addEventListener('click', (e) => {
-    const b = e.target.closest('.cor');
-    if (!b) return;
-    $$('.cor', grupo).forEach((x) => x.classList.toggle('ativa', x === b));
-    corAtiva[grupo.dataset.cores] = b.dataset.cor;
-  }));
-  $$('[name="espessura"]').forEach((r) => r.addEventListener('change', () => { espessura = Number(r.value); }));
-
-  function ajustarFolha() {
-    const largura = folha.clientWidth || LARGURA;
-    escala = largura / LARGURA;
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
-    canvas.style.width = `${largura}px`;
-    canvas.style.height = `${altura * escala}px`;
-    canvas.width = Math.round(largura * dpr);
-    canvas.height = Math.round(altura * escala * dpr);
-    folha.style.setProperty('--linha', `${LINHA * escala}px`);
-    ctx.setTransform(dpr * escala, 0, 0, dpr * escala, 0, 0);
-    redesenhar();
+  // ---------- menus ----------
+  const menu = $('[data-menu]');
+  function abrirMenu(opcoes, x, y) {
+    menu.innerHTML = opcoes.map((o, i) => `<li role="menuitem" tabindex="-1" data-i="${i}"${o.perigo ? ' class="perigo"' : ''}>${esc(o.rotulo)}</li>`).join('');
+    menu.hidden = false;
+    const r = menu.getBoundingClientRect();
+    menu.style.left = `${Math.min(x, innerWidth - r.width - 8)}px`;
+    menu.style.top = `${Math.min(y, innerHeight - r.height - 8)}px`;
+    menu.onclick = (e) => { const li = e.target.closest('li[data-i]'); if (!li) return; menu.hidden = true; opcoes[Number(li.dataset.i)].acao(); };
   }
-  addEventListener('resize', () => { if (!$('[data-painel="caneta"]').hidden) ajustarFolha(); });
+  document.addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target) && !e.target.closest('[data-menu-botao]')) menu.hidden = true; });
 
-  const largura = (t, pressao) => (t.f === 'marca' ? t.w : t.w * (0.35 + 1.3 * pressao));
-
-  // Curva suave: cada trecho vai do meio de um segmento ao meio do próximo, com o ponto como controle.
-  function trecho(c, t, i) {
-    const p = t.p;
-    const x0 = p[i - 3], y0 = p[i - 2], x1 = p[i], y1 = p[i + 1];
-    const xa = i >= 6 ? (p[i - 6] + x0) / 2 : x0;
-    const ya = i >= 6 ? (p[i - 5] + y0) / 2 : y0;
-    const xb = (x0 + x1) / 2, yb = (y0 + y1) / 2;
-    c.lineWidth = largura(t, (p[i - 1] + p[i + 2]) / 2);
-    c.beginPath();
-    c.moveTo(xa, ya);
-    c.quadraticCurveTo(x0, y0, xb, yb);
-    c.stroke();
+  const pastaDe = (rel) => (rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '');
+  function menuDoItem(rel, tipo, x, y) {
+    const pasta = tipo === 'pasta' ? rel : pastaDe(rel);
+    const opcoes = [];
+    if (tipo !== 'pasta') opcoes.push({ rotulo: 'Abrir', acao: () => abrir(rel) });
+    opcoes.push(
+      { rotulo: 'Nova nota aqui', acao: () => novaNota(pasta) },
+      { rotulo: 'Novo desenho aqui', acao: () => novoDesenho(pasta) },
+      { rotulo: 'Nova pasta aqui', acao: () => novaPasta(pasta) },
+      { rotulo: 'Renomear', acao: () => renomear(rel, tipo) },
+      { rotulo: 'Mover para…', acao: () => moverPara(rel) },
+    );
+    if (tipo === 'nota') opcoes.push({ rotulo: 'Copiar [[link]]', acao: () => copiar(`[[${rel.replace(/\.md$/i, '').split('/').pop()}]]`) });
+    if (tipo === 'desenho') opcoes.push({ rotulo: 'Copiar embed ![[ ]]', acao: () => copiar(`![[${rel.replace(/\.sketch\.json$/i, '.sketch.png').split('/').pop()}]]`) });
+    opcoes.push({ rotulo: 'Apagar (vai para a lixeira)', perigo: true, acao: () => apagar(rel) });
+    abrirMenu(opcoes, x, y);
   }
+  async function copiar(t) { try { await navigator.clipboard.writeText(t); avisar('Copiado.'); } catch { avisar(t); } }
 
-  function estilo(c, t) {
-    c.lineCap = 'round';
-    c.lineJoin = 'round';
-    c.strokeStyle = t.c;
-    c.fillStyle = t.c;
-    c.globalAlpha = t.f === 'marca' ? 0.4 : 1;
-    c.globalCompositeOperation = t.f === 'marca' ? 'multiply' : 'source-over';
+  // ---------- modal: busca rápida, paleta e perguntas ----------
+  const modal = $('[data-modal]');
+  const campoModal = $('[data-modal-campo]');
+  const listaModal = $('[data-modal-lista]');
+  const dicaModal = $('[data-modal-dica]');
+  let itensModal = [], selModal = 0, aoEscolher = null, aoFiltrar = null;
+  function abrirModal({ placeholder, dica = '', valor = '', filtrar, escolher }) {
+    aoFiltrar = filtrar; aoEscolher = escolher;
+    campoModal.placeholder = placeholder; campoModal.value = valor; dicaModal.textContent = dica;
+    modal.hidden = false; atualizarModal(); campoModal.focus(); campoModal.select();
   }
+  function fecharModal() { modal.hidden = true; aoEscolher = null; }
+  function atualizarModal() {
+    itensModal = aoFiltrar ? aoFiltrar(campoModal.value) : [];
+    selModal = 0;
+    listaModal.innerHTML = itensModal.map((it, i) => `<li role="option" data-i="${i}" aria-selected="${i === 0}"><span>${esc(it.rotulo)}</span>${it.detalhe ? `<small>${esc(it.detalhe)}</small>` : ''}</li>`).join('');
+  }
+  function marcarModal(i) {
+    selModal = Math.max(0, Math.min(itensModal.length - 1, i));
+    $$('li', listaModal).forEach((li, j) => li.setAttribute('aria-selected', String(j === selModal)));
+    $$('li', listaModal)[selModal]?.scrollIntoView({ block: 'nearest' });
+  }
+  campoModal.addEventListener('input', atualizarModal);
+  campoModal.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); marcarModal(selModal + 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); marcarModal(selModal - 1); }
+    else if (e.key === 'Escape') fecharModal();
+    else if (e.key === 'Enter') { e.preventDefault(); const f = aoEscolher; const it = itensModal[selModal]; fecharModal(); f?.(it, campoModal.value); }
+  });
+  listaModal.addEventListener('click', (e) => { const li = e.target.closest('li[data-i]'); if (!li) return; const f = aoEscolher; const it = itensModal[Number(li.dataset.i)]; fecharModal(); f?.(it, campoModal.value); });
+  modal.addEventListener('click', (e) => { if (e.target === modal) fecharModal(); });
 
-  function desenharTraco(c, t) {
-    c.save();
-    estilo(c, t);
-    if (t.p.length === 3) {
-      c.beginPath();
-      c.arc(t.p[0], t.p[1], largura(t, t.p[2]) / 2, 0, Math.PI * 2);
-      c.fill();
-    } else if (t.f === 'marca') {
-      // marca-texto: um único caminho, para a transparência não se acumular nas emendas
-      c.lineWidth = t.w;
-      c.beginPath();
-      c.moveTo(t.p[0], t.p[1]);
-      for (let i = 3; i < t.p.length; i += 3) c.lineTo(t.p[i], t.p[i + 1]);
-      c.stroke();
-    } else {
-      for (let i = 3; i < t.p.length; i += 3) trecho(c, t, i);
-      // último meio-segmento, até o ponto final
-      const n = t.p.length;
-      c.lineWidth = largura(t, t.p[n - 1]);
-      c.beginPath();
-      c.moveTo((t.p[n - 6] + t.p[n - 3]) / 2, (t.p[n - 5] + t.p[n - 2]) / 2);
-      c.lineTo(t.p[n - 3], t.p[n - 2]);
-      c.stroke();
-    }
-    c.restore();
+  function perguntar(placeholder, valor = '', dica = 'Enter confirma · Esc cancela') {
+    return new Promise((resolve) => abrirModal({ placeholder, valor, dica, filtrar: () => [], escolher: (_it, texto) => resolve(texto.trim() || null) }));
   }
 
-  function redesenhar() {
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.restore();
-    tracos.forEach((t) => desenharTraco(ctx, t));
+  // nota pelo nome: aproximação simples (todas as letras na ordem)
+  function pontuar(alvo, q) {
+    const a = semAcento(alvo); let pos = 0, pontos = 0;
+    for (const ch of q) { const i = a.indexOf(ch, pos); if (i < 0) return -1; pontos += i === pos ? 2 : 1; pos = i + 1; }
+    return pontos + (a.startsWith(q) ? 10 : 0) + (a.includes(q) ? 5 : 0);
   }
-
-  // desfazer/refazer guardam a lista de traços (os traços em si nunca mudam)
-  const pilhaDesfazer = [];
-  const pilhaRefazer = [];
-  function registrar() {
-    pilhaDesfazer.push(tracos.slice());
-    if (pilhaDesfazer.length > 150) pilhaDesfazer.shift();
-    pilhaRefazer.length = 0;
-  }
-  function desenhoMudou() { redesenhar(); marcarSujo(2000); }
-
-  let atual = null;      // traço em andamento
-  let apagou = false;    // a passada da borracha já registrou o desfazer?
-  let modoApagar = false;
-  let ponteiroAtivo = null;
-  let rolagemDedo = null;
-  let canetaVista = false;
-
-  function ponto(e) {
-    const r = canvas.getBoundingClientRect();
-    const x = Math.round(((e.clientX - r.left) / escala) * 10) / 10;
-    const y = Math.round(((e.clientY - r.top) / escala) * 10) / 10;
-    const pressao = e.pointerType === 'pen' ? Math.round(Math.max(0.05, e.pressure || 0.5) * 100) / 100 : 0.5;
-    return [x, y, pressao];
-  }
-
-  function apagarEm(x, y) {
-    const raio = 14 / Math.max(escala, 0.4);
-    const antes = tracos.length;
-    const restam = tracos.filter((t) => {
-      for (let i = 0; i < t.p.length; i += 3) {
-        const dx = t.p[i] - x, dy = t.p[i + 1] - y;
-        if (dx * dx + dy * dy <= (raio + largura(t, t.p[i + 2]) / 2) ** 2) return false;
-      }
-      return true;
+  function abrirRapido() {
+    abrirModal({
+      placeholder: 'Nome da nota ou do desenho…', dica: '↑↓ escolhe · Enter abre · se não existir, cria',
+      filtrar: (texto) => {
+        const q = semAcento(texto.trim());
+        const todos = [...indice.notas.map((n) => ({ rotulo: n.nome, detalhe: n.rel, rel: n.rel })),
+          ...indice.arquivos.filter((a) => a.tipo !== 'imagem' || !a.rel.toLowerCase().endsWith('.sketch.png')).map((a) => ({ rotulo: a.nome.replace(/\.sketch\.json$/i, ' ✎'), detalhe: a.rel, rel: a.rel }))];
+        const lista = q ? todos.map((t) => ({ ...t, s: Math.max(pontuar(t.rotulo, q), pontuar(t.detalhe, q) - 3) })).filter((t) => t.s >= 0).sort((a, b) => b.s - a.s).slice(0, 40) : todos.slice(0, 40);
+        if (texto.trim() && !lista.some((t) => semAcento(t.rotulo) === q)) lista.push({ rotulo: `Criar “${texto.trim()}”`, criar: texto.trim() });
+        return lista;
+      },
+      escolher: (it) => { if (!it) return; it.criar ? criarNotaComNome(it.criar) : abrir(it.rel); },
     });
-    if (restam.length !== antes) {
-      if (!apagou) { registrar(); apagou = true; }
-      tracos = restam;
-      redesenhar();
-    }
   }
 
-  canvas.addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'pen' && !canetaVista) {
-      canetaVista = true;
-      if (!soCaneta) {
-        soCaneta = true;
-        caixaSoCaneta.checked = true;
-        try { localStorage.setItem('ayo-so-caneta', 'sim'); } catch {}
-        avisar('Caneta detectada: agora só ela desenha, e o dedo rola a página.');
-      }
-    }
-    // dedo com "só caneta": rola a página manualmente (a folha bloqueia o gesto nativo)
-    if (e.pointerType === 'touch' && (soCaneta || ponteiroAtivo !== null)) {
-      rolagemDedo = { id: e.pointerId, y: e.clientY };
-      return;
-    }
-    if (ponteiroAtivo !== null || (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 5)) return;
-    e.preventDefault();
-    canvas.setPointerCapture(e.pointerId);
-    ponteiroAtivo = e.pointerId;
-    // botão de borracha da caneta (ou ferramenta borracha)
-    modoApagar = ferramenta === 'borracha' || e.button === 5 || (e.buttons & 32) === 32;
-    const [x, y, p] = ponto(e);
-    if (modoApagar) { apagou = false; apagarEm(x, y); return; }
-    atual = {
-      f: ferramenta === 'marca' ? 'marca' : 'caneta',
-      c: ferramenta === 'marca' ? corAtiva.marca : corAtiva.caneta,
-      w: ferramenta === 'marca' ? 22 : espessura,
-      p: [x, y, p],
-    };
-    ctx.save();
-    estilo(ctx, atual);
-    ctx.beginPath();
-    ctx.arc(x, y, largura(atual, p) / 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  });
-
-  canvas.addEventListener('pointermove', (e) => {
-    if (rolagemDedo && e.pointerId === rolagemDedo.id) {
-      window.scrollBy(0, rolagemDedo.y - e.clientY);
-      rolagemDedo.y = e.clientY;
-      return;
-    }
-    if (e.pointerId !== ponteiroAtivo) return;
-    const eventos = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-    for (const ev of (eventos.length ? eventos : [e])) {
-      const [x, y, p] = ponto(ev);
-      if (modoApagar) { apagarEm(x, y); continue; }
-      const q = atual.p;
-      const n = q.length;
-      if (Math.abs(q[n - 3] - x) + Math.abs(q[n - 2] - y) < 0.8) continue;
-      q.push(x, y, p);
-      if (atual.f === 'marca') {
-        ctx.save(); estilo(ctx, atual); ctx.globalAlpha = 0.4; ctx.lineWidth = atual.w;
-        ctx.beginPath(); ctx.moveTo(q[n - 3], q[n - 2]); ctx.lineTo(x, y); ctx.stroke(); ctx.restore();
-      } else {
-        ctx.save(); estilo(ctx, atual); trecho(ctx, atual, q.length - 3); ctx.restore();
-      }
-    }
-  });
-
-  function fimDoTraco(e) {
-    if (rolagemDedo && e.pointerId === rolagemDedo.id) { rolagemDedo = null; return; }
-    if (e.pointerId !== ponteiroAtivo) return;
-    ponteiroAtivo = null;
-    if (modoApagar) {
-      modoApagar = false;
-      if (apagou) desenhoMudou();
-      return;
-    }
-    if (atual) {
-      registrar();
-      tracos = tracos.concat([atual]);
-      atual = null;
-      desenhoMudou();
-    }
+  const COMANDOS = [
+    ['Nova nota', 'Ctrl+N', () => novaNota(pastaAtual())],
+    ['Novo desenho', '', () => novoDesenho(pastaAtual())],
+    ['Nova pasta', '', () => novaPasta(pastaAtual())],
+    ['Abrir nota do dia', '', () => diaria()],
+    ['Abrir o grafo', '', () => abrirGrafo()],
+    ['Buscar em todo o cofre', 'Ctrl+Shift+F', () => mostrarAbaEsq('busca', true)],
+    ['Alternar editar/ler', 'Ctrl+E', () => alternarModo()],
+    ['Modo dividido', '', () => definirModo('dividir')],
+    ['Renomear nota atual', 'F2', () => atual && renomear(atual.rel, atual.tipo)],
+    ['Apagar nota atual', '', () => atual && apagar(atual.rel)],
+    ['Inserir data de hoje', '', () => inserir(new Date().toLocaleDateString('pt-BR'))],
+    ['Inserir tarefa', '', () => inserir('- [ ] ')],
+    ['Inserir tabela', '', () => inserir('\n| Coluna | Coluna |\n| --- | --- |\n|  |  |\n')],
+    ['Inserir callout', '', () => inserir('\n> [!note] Título\n> Texto\n')],
+    ['Mostrar/ocultar barra esquerda', '', () => alternarLado('esquerda')],
+    ['Mostrar/ocultar barra direita', '', () => alternarLado('direita')],
+    ['Recolher todas as pastas', '', () => { abertas.clear(); salvarPrefs({ abertas: [] }); desenharArvore(); }],
+    ['Sair', '', () => sair()],
+  ];
+  function paleta() {
+    abrirModal({
+      placeholder: 'Comando…', dica: 'Enter executa',
+      filtrar: (t) => { const q = semAcento(t.trim()); return COMANDOS.filter(([n]) => !q || pontuar(n, q) >= 0).map(([n, atalho, f]) => ({ rotulo: n, detalhe: atalho, f })); },
+      escolher: (it) => it?.f(),
+    });
   }
-  canvas.addEventListener('pointerup', fimDoTraco);
-  canvas.addEventListener('pointercancel', fimDoTraco);
-  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  // ---------- botões da folha ----------
-  let confirmarLimpar = null;
-  $('.ed-botoes').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-desenho]');
-    if (!b) return;
-    const acao = b.dataset.desenho;
-    if (acao === 'desfazer' && pilhaDesfazer.length) { pilhaRefazer.push(tracos); tracos = pilhaDesfazer.pop(); desenhoMudou(); }
-    if (acao === 'refazer' && pilhaRefazer.length) { pilhaDesfazer.push(tracos); tracos = pilhaRefazer.pop(); desenhoMudou(); }
-    if (acao === 'pagina') {
-      if (altura >= ALTURA_PAGINA * 20) { avisar('Limite de 20 páginas por anotação.', true); return; }
-      altura += ALTURA_PAGINA;
-      ajustarFolha();
-      marcarSujo(1500);
-    }
-    if (acao === 'limpar') {
-      if (!tracos.length) return;
-      if (confirmarLimpar !== b) {
-        confirmarLimpar = b;
-        b.classList.add('confirmar');
-        b.textContent = 'Confirmar limpeza';
-        setTimeout(() => { if (confirmarLimpar === b) { confirmarLimpar = null; b.classList.remove('confirmar'); b.textContent = 'Limpar tudo'; } }, 4000);
-        return;
-      }
-      confirmarLimpar = null;
-      b.classList.remove('confirmar');
-      b.textContent = 'Limpar tudo';
-      registrar();
-      tracos = [];
-      desenhoMudou();
-    }
-    if (acao === 'png') {
-      const off = document.createElement('canvas');
-      off.width = LARGURA;
-      off.height = altura;
-      const c = off.getContext('2d');
-      c.fillStyle = '#ffffff';
-      c.fillRect(0, 0, LARGURA, altura);
-      tracos.forEach((t) => desenharTraco(c, t));
-      const a = document.createElement('a');
-      a.href = off.toDataURL('image/png');
-      a.download = `${($('[name="titulo"]').value || 'anotacao').replace(/[^\p{L}\p{N} _-]+/gu, '').trim() || 'anotacao'}.png`;
-      a.click();
-    }
-  });
+  // ---------- criar / renomear / mover / apagar ----------
+  const pastaAtual = () => (atual?.rel ? pastaDe(atual.rel) : '');
+  const limparNome = (n) => n.replace(/[\\:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+  async function criarNotaComNome(nome, pasta = '') {
+    const n = limparNome(nome).replace(/\.md$/i, '');
+    if (!n) return;
+    const c = n.includes('/') ? n : (pasta ? `${pasta}/${n}` : n);
+    try {
+      const r = await api('/api/caderno/criar', { c: `${c}.md`, tipo: 'nota', conteudo: `# ${n.split('/').pop()}\n\n` });
+      await recarregar(); await abrir(r.c, { modo: 'editar' });
+    } catch (err) { avisar(err.message, true); }
+  }
+  async function novaNota(pasta) { const n = await perguntar('Nome da nova nota', 'Sem título'); if (n) await criarNotaComNome(n, pasta); }
+  async function novaPasta(pasta) {
+    const n = await perguntar('Nome da nova pasta');
+    if (!n) return;
+    const c = pasta ? `${pasta}/${limparNome(n)}` : limparNome(n);
+    try { await api('/api/caderno/criar', { c, tipo: 'pasta' }); abertas.add(c); if (pasta) abertas.add(pasta); await recarregar(); } catch (err) { avisar(err.message, true); }
+  }
+  async function novoDesenho(pasta) {
+    const n = await perguntar('Nome do desenho', `Desenho ${new Date().toLocaleDateString('sv-SE')}`);
+    if (!n) return;
+    try { const r = await api('/api/caderno/criar', { c: pasta ? `${pasta}/${limparNome(n)}` : limparNome(n), tipo: 'desenho' }); await recarregar(); await abrir(r.c); } catch (err) { avisar(err.message, true); }
+  }
+  async function moverArquivo(de, para) {
+    try {
+      await salvarAgora();
+      const r = await api('/api/caderno/mover', { de, para });
+      if (atual?.rel === de) atual.rel = para;
+      await recarregar();
+      if (atual?.rel === para) { history.replaceState(null, '', rotaDe(para)); mostrarCaminho(); }
+      avisar(r.atualizadas ? `Movido. Links atualizados em ${r.atualizadas} ${r.atualizadas === 1 ? 'nota' : 'notas'}.` : 'Movido.');
+    } catch (err) { avisar(err.message, true); }
+  }
+  async function renomear(rel, tipo) {
+    const ext = tipo === 'nota' ? '.md' : tipo === 'desenho' ? '.sketch.json' : '';
+    const base = rel.split('/').pop();
+    const semExt = ext && base.toLowerCase().endsWith(ext) ? base.slice(0, -ext.length) : base;
+    const novo = await perguntar('Novo nome', semExt);
+    if (!novo || novo === semExt) return;
+    const pasta = pastaDe(rel);
+    await moverArquivo(rel, `${pasta ? `${pasta}/` : ''}${limparNome(novo)}${ext && !novo.toLowerCase().endsWith(ext) ? ext : ''}`);
+  }
+  async function moverPara(rel) {
+    const pastas = [];
+    const andar = (ns) => ns.forEach((n) => { if (n.tipo === 'pasta') { pastas.push(n.caminho); andar(n.filhos); } });
+    andar(arvore);
+    abrirModal({
+      placeholder: 'Mover para a pasta…', dica: 'Escolha a pasta (ou digite um nome novo)',
+      filtrar: (t) => { const q = semAcento(t.trim()); const l = [{ rotulo: '(raiz do cofre)', p: '' }, ...pastas.map((p) => ({ rotulo: p, p }))].filter((x) => !q || semAcento(x.rotulo).includes(q)); if (t.trim() && !pastas.includes(t.trim())) l.push({ rotulo: `Nova pasta “${t.trim()}”`, p: limparNome(t.trim()) }); return l; },
+      escolher: (it) => { if (!it) return; const nome = rel.split('/').pop(); moverArquivo(rel, it.p ? `${it.p}/${nome}` : nome); },
+    });
+  }
+  async function apagar(rel) {
+    const ok = await perguntar(`Apagar “${rel.split('/').pop()}”? Digite SIM`, '', 'Vai para a pasta .lixeira do cofre');
+    if (!ok || ok.toUpperCase() !== 'SIM') return;
+    try {
+      if (atual?.rel === rel) { sujo = false; await fecharAtual(); mostrarVazio(); history.pushState(null, '', '/caderno'); }
+      await api('/api/caderno/apagar', { c: rel }); await recarregar(); avisar('Apagado (está na .lixeira do cofre).');
+    } catch (err) { avisar(err.message, true); }
+  }
+  async function diaria() { try { const r = await api('/api/caderno/diaria'); await recarregar(); await abrir(r.c); } catch (err) { avisar(err.message, true); } }
 
-  // atalhos: Ctrl+Z / Ctrl+Shift+Z na aba da caneta
-  document.addEventListener('keydown', (e) => {
-    if (raiz.dataset.aba !== 'caneta' || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
-    if (document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
-    e.preventDefault();
-    $(`[data-desenho="${e.shiftKey ? 'refazer' : 'desfazer'}"]`).click();
-  });
+  // ---------- abrir / fechar ----------
+  const rotaDe = (rel) => (rel.toLowerCase().endsWith('.sketch.json') ? `/caderno/d/${urlCaminho(rel)}` : `/caderno/n/${urlCaminho(rel)}`);
+  function tipoDe(rel) {
+    const r = rel.toLowerCase();
+    if (r.endsWith('.sketch.json')) return 'desenho';
+    if (r.endsWith('.md')) return 'nota';
+    if (/\.(png|jpe?g|gif|webp)$/.test(r)) return 'imagem';
+    if (r.endsWith('.pdf')) return 'pdf';
+    return null;
+  }
+  function esconderAreas() {
+    $('[data-na-trilha]').hidden = true;
+    $('[data-vazio]').hidden = true; $('[data-editor]').hidden = true; $('[data-desenho-area]').hidden = true; $('[data-grafo-area]').hidden = true; $('[data-imagem-area]').hidden = true;
+  }
+  function mostrarVazio() { esconderAreas(); $('[data-barra]').hidden = true; $('[data-vazio]').hidden = false; atual = null; desenharArvore(); limparLateral(); document.title = 'Caderno · std(dying)'; }
 
-  // ---------- apagar a anotação (segundo clique confirma) ----------
-  const botaoApagar = $('[data-caderno-remover]');
-  if (botaoApagar) {
-    botaoApagar.addEventListener('click', async () => {
-      if (!botaoApagar.classList.contains('confirmar')) {
-        botaoApagar.classList.add('confirmar');
-        botaoApagar.textContent = 'Confirmar: apagar';
-        return;
-      }
-      botaoApagar.disabled = true;
+  async function fecharAtual() {
+    pararGrafo();
+    if (desenhoAberto) { await desenhoAberto.fechar(); desenhoAberto = null; }
+    if (atual?.tipo === 'nota') await salvarAgora();
+  }
+
+  async function abrir(rel, { modo = null, historia = true } = {}) {
+    if (!rel) return;
+    const tipo = tipoDe(rel);
+    if (tipo === 'pdf') { window.open(`/caderno/arquivo/${urlCaminho(rel)}`, '_blank', 'noopener'); return; }
+    await fecharAtual();
+    atual = null; // enquanto a próxima carrega, atalhos (F2, Ctrl+S…) não mexem na nota anterior
+    const rota = tipo === 'imagem' ? `/caderno/n/${urlCaminho(rel)}` : rotaDe(rel);
+    // a última nota abre sozinha em /caderno: o endereço passa a ser o dela (o "voltar" e o ☰ dependem disso)
+    if (historia) history.pushState(null, '', rota);
+    else if (location.pathname !== rota) history.replaceState(null, '', rota);
+    // abre as pastas do caminho na árvore
+    const partes = rel.split('/'); for (let i = 1; i < partes.length; i++) abertas.add(partes.slice(0, i).join('/'));
+    esconderAreas();
+    $('[data-barra]').hidden = false;
+    if (ehCelular()) corpo.classList.remove('mostrar-esquerda');
+    if (tipo === 'nota') {
       try {
-        travado = true;
-        sujo = false;
-        await api(`/api/caderno/${id}/remover`);
-        sessionStorage.setItem('ayo-aviso', 'Anotação apagada. Ela ainda existe no backup diário do banco.');
-        location.href = '/caderno';
+        const n = await obter(`/api/caderno/nota?c=${encodeURIComponent(rel)}`);
+        atual = { tipo, rel, hash: n.hash };
+        mostrarTrilha(n.trilha);
+        sujo = false; conflito = false;
+        fonte.value = n.texto;
+        $('[data-editor]').hidden = false;
+        $('[data-modos]').hidden = false;
+        if (modo) definirModo(modo, false);
+        else if (app.dataset.modo === 'ler' && new URLSearchParams(location.search).get('editar')) definirModo('dividir', false);
+        mostrarEstado('salvo', 'Salvo');
+        await renderizar();
+        carregarLinks();
+        salvarPrefs({ ultima: rel, abertas: [...abertas] });
+        if (app.dataset.modo !== 'ler' && (modo === 'editar' || new URLSearchParams(location.search).get('editar'))) { fonte.focus(); fonte.setSelectionRange(fonte.value.length, fonte.value.length); }
       } catch (err) {
-        travado = false;
-        avisar(err.message, true);
-        botaoApagar.disabled = false;
+        avisar(err.message, true); mostrarVazio();
+        // a última nota pode ter sido apagada ou movida fora daqui: esquece e volta para /caderno
+        if (err.status === 404 && prefs.ultima === rel) salvarPrefs({ ultima: '' });
+        if (!historia) history.replaceState(null, '', '/caderno');
+        return;
       }
-    });
+    } else if (tipo === 'desenho') {
+      atual = { tipo, rel };
+      $('[data-modos]').hidden = true;
+      const area = $('[data-desenho-area]');
+      area.hidden = false;
+      desenhoAberto = window.AyoDesenho.abrir(area, rel, {
+        api, avisar,
+        aoSalvar: (s) => mostrarEstado(s === 'salvo' ? 'salvo' : s === 'erro' ? 'erro' : 'sujo', s === 'salvo' ? 'Salvo' : s === 'salvando' ? 'Salvando…' : s === 'erro' ? 'Não salvou' : 'Alterações não salvas'),
+      });
+      limparLateral(); carregarLinks();
+      salvarPrefs({ ultima: rel, abertas: [...abertas] });
+    } else if (tipo === 'imagem') {
+      atual = { tipo, rel };
+      $('[data-modos]').hidden = true;
+      const area = $('[data-imagem-area]');
+      area.innerHTML = `<img src="/caderno/arquivo/${urlCaminho(rel)}" alt="${esc(rel.split('/').pop())}">`;
+      area.hidden = false; mostrarEstado('', ''); limparLateral(); carregarLinks();
+    }
+    mostrarCaminho(); desenharArvore();
+    document.title = `${rel.split('/').pop().replace(/\.(md|sketch\.json)$/i, '')} · std(dying)`;
   }
 
-  abrirAba(raiz.dataset.aba || 'texto');
-  if (!id) $('[name="titulo"]').focus();
+  // Nota que fica dentro de uma trilha: atalho para a página dela (progresso, tarefas, revisões).
+  function mostrarTrilha(t) {
+    const el = $('[data-na-trilha]');
+    el.hidden = !t;
+    if (!t) return;
+    el.href = t.href;
+    el.textContent = `Na trilha ${t.curto}`;
+    el.title = `Abrir esta nota na página da trilha ${t.nome}`;
+  }
+
+  function mostrarCaminho() {
+    if (!atual?.rel) return;
+    const partes = atual.rel.split('/');
+    const nome = partes.pop().replace(/\.(md|sketch\.json)$/i, '');
+    $('[data-migalha]').innerHTML = `${partes.map((p) => `${esc(p)} / `).join('')}<b>${esc(nome)}</b>`;
+  }
+
+  // ---------- edição e salvamento ----------
+  function marcarSujo() {
+    if (conflito) return;
+    sujo = true; mostrarEstado('sujo', 'Alterações não salvas');
+    clearTimeout(timerSalvar); timerSalvar = setTimeout(salvar, 900);
+    clearTimeout(timerRender); timerRender = setTimeout(renderizar, 350);
+  }
+  async function salvar() {
+    if (!sujo || !atual || atual.tipo !== 'nota' || conflito) return;
+    if (salvando) { clearTimeout(timerSalvar); timerSalvar = setTimeout(salvar, 400); return; }
+    salvando = true; sujo = false;
+    const rel = atual.rel;
+    mostrarEstado('sujo', 'Salvando…');
+    try {
+      const r = await api('/api/caderno/nota', { c: rel, texto: fonte.value, hash: atual.hash });
+      if (atual?.rel === rel) { atual.hash = r.hash; if (!sujo) mostrarEstado('salvo', 'Salvo'); }
+      atualizarIndiceDepois();
+    } catch (err) {
+      if (err.status === 409) { conflito = true; mostrarConflito(); }
+      else { sujo = true; mostrarEstado('erro', 'Não salvou: tentando de novo'); clearTimeout(timerSalvar); timerSalvar = setTimeout(salvar, 5000); }
+    } finally { salvando = false; }
+  }
+  async function salvarAgora() { clearTimeout(timerSalvar); if (sujo) await salvar(); }
+  const atualizarIndiceDepois = (() => { let t; return () => { clearTimeout(t); t = setTimeout(async () => { try { indice = await obter('/api/caderno/indice'); desenharTags(); carregarLinks(); } catch {} }, 1500); }; })();
+
+  function mostrarConflito() {
+    mostrarEstado('erro', 'Conflito');
+    abrirMenu([
+      { rotulo: 'A nota mudou fora daqui (Obsidian ou outra aba). Recarregar a versão do arquivo', acao: async () => { conflito = false; sujo = false; await abrir(atual.rel, { historia: false }); } },
+      { rotulo: 'Manter o que escrevi aqui e sobrescrever o arquivo', perigo: true, acao: async () => { conflito = false; atual.hash = undefined; sujo = true; await salvar(); } },
+    ], innerWidth / 2 - 180, 120);
+  }
+
+  fonte.addEventListener('input', () => { marcarSujo(); autocompletar(); });
+  addEventListener('beforeunload', (e) => { if (sujo || salvando || desenhoAberto?.sujo) { salvarAgora(); desenhoAberto?.salvarAgora(); e.preventDefault(); e.returnValue = ''; } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { salvarAgora(); desenhoAberto?.salvarAgora(); } });
+
+  function inserir(texto, envolverAntes = null, envolverDepois = null) {
+    if (!atual || atual.tipo !== 'nota') return;
+    if (app.dataset.modo === 'ler') definirModo('dividir');
+    const { selectionStart: a, selectionEnd: b, value: v } = fonte;
+    const sel = v.slice(a, b);
+    const novo = envolverAntes ? `${envolverAntes}${sel}${envolverDepois}` : texto;
+    fonte.setRangeText(novo, a, b, 'end');
+    if (envolverAntes && !sel) fonte.selectionStart = fonte.selectionEnd = a + envolverAntes.length;
+    fonte.focus(); marcarSujo();
+  }
+
+  fonte.addEventListener('keydown', (e) => {
+    const auto = $('[data-auto]');
+    if (!auto.hidden && ['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(e.key)) { teclaAuto(e); return; }
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl && e.key.toLowerCase() === 'b') { e.preventDefault(); inserir('', '**', '**'); return; }
+    if (ctrl && e.key.toLowerCase() === 'i') { e.preventDefault(); inserir('', '*', '*'); return; }
+    if (ctrl && e.key.toLowerCase() === 'k') { e.preventDefault(); inserir('', '[[', ']]'); return; }
+    if (ctrl && e.key === 'Enter') { e.preventDefault(); alternarTarefaNaLinha(); return; }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const { selectionStart: a, value: v } = fonte;
+      const ini = v.lastIndexOf('\n', a - 1) + 1;
+      if (e.shiftKey) { if (v.slice(ini, ini + 2) === '  ') { fonte.setRangeText('', ini, ini + 2, 'preserve'); fonte.selectionStart = fonte.selectionEnd = Math.max(ini, a - 2); } }
+      else fonte.setRangeText('  ', ini, ini, 'end'), fonte.selectionStart = fonte.selectionEnd = a + 2;
+      marcarSujo(); return;
+    }
+    // Enter continua listas, tarefas e citações
+    if (e.key === 'Enter' && !e.shiftKey) {
+      const { selectionStart: a, value: v } = fonte;
+      const ini = v.lastIndexOf('\n', a - 1) + 1;
+      const linha = v.slice(ini, a);
+      const m = /^(\s*)((?:[-*+] \[[ xX]\] )|(?:[-*+] )|(?:(\d+)[.)] )|(?:> ))(.*)$/.exec(linha);
+      if (!m) return;
+      e.preventDefault();
+      if (!m[4].trim()) { fonte.setRangeText('', ini, a, 'end'); marcarSujo(); return; } // linha vazia encerra a lista
+      let marcador = m[2];
+      if (/\[[ xX]\]/.test(marcador)) marcador = marcador.replace(/\[[ xX]\]/, '[ ]');
+      if (m[3]) marcador = marcador.replace(m[3], String(Number(m[3]) + 1));
+      fonte.setRangeText(`\n${m[1]}${marcador}`, a, a, 'end'); marcarSujo();
+    }
+  });
+  function alternarTarefaNaLinha() {
+    const { selectionStart: a, value: v } = fonte;
+    const ini = v.lastIndexOf('\n', a - 1) + 1;
+    const fim = v.indexOf('\n', a) < 0 ? v.length : v.indexOf('\n', a);
+    const linha = v.slice(ini, fim);
+    let nova;
+    if (/^\s*[-*+] \[ \]/.test(linha)) nova = linha.replace('[ ]', '[x]');
+    else if (/^\s*[-*+] \[[xX]\]/.test(linha)) nova = linha.replace(/\[[xX]\]/, '[ ]');
+    else if (/^\s*[-*+] /.test(linha)) nova = linha.replace(/^(\s*[-*+] )/, '$1[ ] ');
+    else nova = `- [ ] ${linha}`;
+    fonte.setRangeText(nova, ini, fim, 'end'); marcarSujo();
+  }
+
+  // colar/arrastar imagem: vira anexo e entra como ![[embed]]
+  async function enviarAnexo(arq) {
+    mostrarEstado('sujo', 'Enviando imagem…');
+    const r = await fetch(`/api/caderno/anexo?nome=${encodeURIComponent(arq.name || '')}`, { method: 'POST', headers: { 'Content-Type': arq.type, 'X-Ayo': '1' }, body: arq });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.erro || 'Falha no envio.');
+    inserir(`![[${j.c.split('/').pop()}]]\n`);
+    indice = await obter('/api/caderno/indice');
+  }
+  fonte.addEventListener('paste', async (e) => {
+    const arq = [...(e.clipboardData?.files || [])].find((f) => /^image\/|pdf/.test(f.type));
+    if (!arq) return;
+    e.preventDefault();
+    try { await enviarAnexo(arq); } catch (err) { avisar(err.message, true); }
+  });
+  fonte.addEventListener('drop', async (e) => {
+    const arq = [...(e.dataTransfer?.files || [])].find((f) => /^image\/|pdf/.test(f.type));
+    if (!arq) return;
+    e.preventDefault();
+    try { await enviarAnexo(arq); } catch (err) { avisar(err.message, true); }
+  });
+
+  // ---------- autocompletar [[link]] ----------
+  const auto = $('[data-auto]');
+  let itensAuto = [], selAuto = 0, inicioAuto = -1;
+  function autocompletar() {
+    const { selectionStart: a, value: v } = fonte;
+    const ini = v.lastIndexOf('[[', a);
+    const fecha = v.lastIndexOf(']]', a);
+    if (ini < 0 || fecha > ini || a - ini > 80 || v.slice(ini, a).includes('\n')) { auto.hidden = true; return; }
+    const q = semAcento(v.slice(ini + 2, a));
+    inicioAuto = ini + 2;
+    itensAuto = [...indice.notas, ...indice.arquivos].map((n) => ({ nome: n.tipo === 'nota' ? n.nome : n.rel.split('/').pop(), rel: n.rel }))
+      .map((n) => ({ ...n, s: q ? pontuar(n.nome, q) : 0 })).filter((n) => n.s >= 0).sort((x, y) => y.s - x.s).slice(0, 12);
+    if (!itensAuto.length) { auto.hidden = true; return; }
+    selAuto = 0;
+    auto.innerHTML = itensAuto.map((n, i) => `<li role="option" data-i="${i}" aria-selected="${i === 0}">${esc(n.nome)}<small>${esc(n.rel)}</small></li>`).join('');
+    const r = fonte.getBoundingClientRect();
+    auto.style.left = `${Math.min(r.left + 40, innerWidth - 380)}px`;
+    auto.style.top = `${Math.min(r.top + 60, innerHeight - 320)}px`;
+    auto.hidden = false;
+  }
+  function escolherAuto(i) {
+    const n = itensAuto[i];
+    if (!n) return;
+    const { selectionStart: a, value: v } = fonte;
+    const jaFecha = v.slice(a, a + 2) === ']]';
+    fonte.setRangeText(`${n.nome}${jaFecha ? '' : ']]'}`, inicioAuto, a, 'end');
+    if (jaFecha) fonte.selectionStart = fonte.selectionEnd = fonte.selectionStart + 2;
+    auto.hidden = true; marcarSujo();
+  }
+  function teclaAuto(e) {
+    e.preventDefault();
+    if (e.key === 'Escape') { auto.hidden = true; return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      selAuto = Math.max(0, Math.min(itensAuto.length - 1, selAuto + (e.key === 'ArrowDown' ? 1 : -1)));
+      $$('li', auto).forEach((li, j) => li.setAttribute('aria-selected', String(j === selAuto)));
+      return;
+    }
+    escolherAuto(selAuto);
+  }
+  auto.addEventListener('mousedown', (e) => { const li = e.target.closest('li[data-i]'); if (li) { e.preventDefault(); escolherAuto(Number(li.dataset.i)); } });
+  fonte.addEventListener('blur', () => setTimeout(() => { auto.hidden = true; }, 150));
+
+  // ---------- leitura ----------
+  async function renderizar() {
+    if (!atual || atual.tipo !== 'nota') return;
+    try {
+      const r = await api('/api/caderno/render', { c: atual.rel, texto: fonte.value });
+      const props = Object.entries(r.props || {});
+      leitura.innerHTML = (props.length ? `<dl class="cd-propriedades">${props.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(Array.isArray(v) ? v.join(', ') : v)}</dd>`).join('')}</dl>` : '') + r.html;
+      $('[data-sumario]').innerHTML = r.toc.length ? r.toc.map((t) => `<li class="n${t.nivel}"><a href="#${esc(t.id)}" data-ancora="${esc(t.id)}">${esc(t.texto)}</a></li>`).join('') : '<li class="vazio">Sem títulos.</li>';
+      $('[data-props]').innerHTML = props.length ? props.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(Array.isArray(v) ? v.join(', ') : v)}</dd>`).join('') : '<p class="vazio">Sem propriedades. Adicione no topo da nota, entre linhas ---.</p>';
+      const saidas = [...new Map($$('a[data-nota]', leitura).map((a) => [a.dataset.nota, a.textContent])).entries()];
+      $('[data-saidas]').innerHTML = saidas.length ? saidas.map(([rel, t]) => `<li><a href="${rotaDe(rel)}" data-abrir="${esc(rel)}"><b>${esc(t)}</b><small>${esc(rel)}</small></a></li>`).join('') : '<li class="vazio">Nenhum link nesta nota.</li>';
+    } catch (err) { avisar(err.message, true); }
+  }
+  async function carregarLinks() {
+    if (!atual?.rel) return;
+    try {
+      const r = await obter(`/api/caderno/backlinks?c=${encodeURIComponent(atual.rel)}`);
+      $('[data-backlinks]').innerHTML = r.backlinks.length ? r.backlinks.map((b) => `<li><a href="${rotaDe(b.rel)}" data-abrir="${esc(b.rel)}"><b>${esc(b.nome)}</b><small>${esc(b.trecho)}</small></a></li>`).join('') : '<li class="vazio">Nenhuma nota aponta para cá.</li>';
+    } catch {}
+  }
+  function limparLateral() { $('[data-sumario]').innerHTML = ''; $('[data-props]').innerHTML = ''; $('[data-saidas]').innerHTML = ''; $('[data-backlinks]').innerHTML = ''; }
+
+  leitura.addEventListener('click', async (e) => {
+    const a = e.target.closest('a');
+    if (a?.dataset.nota) { e.preventDefault(); return abrir(a.dataset.nota); }
+    if (a?.dataset.criar) { e.preventDefault(); return criarNotaComNome(a.dataset.criar, pastaAtual()); }
+    if (a?.dataset.tag) { e.preventDefault(); return buscarTag(a.dataset.tag); }
+    if (a && a.getAttribute('href')?.startsWith('/caderno/d/')) { e.preventDefault(); return abrir(a.getAttribute('href').slice(11).split('/').map(decodeURIComponent).join('/')); }
+  });
+  leitura.addEventListener('change', async (e) => {
+    const cb = e.target.closest('input.cb[data-linha]');
+    if (!cb) return;
+    await salvarAgora();
+    try {
+      const r = await api('/api/caderno/tarefa', { c: atual.rel, linha: Number(cb.dataset.linha), hash: cb.dataset.hash, marcado: cb.checked });
+      const linhas = fonte.value.split('\n');
+      const n = Number(cb.dataset.linha);
+      linhas[n] = linhas[n].replace(/\[[ xX]\]/, cb.checked ? '[x]' : '[ ]');
+      fonte.value = linhas.join('\n');
+      atual.hash = r.hash;
+      cb.dataset.hash = r.hashLinha;
+      cb.closest('li')?.classList.toggle('feito', cb.checked);
+    } catch (err) { cb.checked = !cb.checked; avisar(err.status === 409 ? 'A nota mudou. Recarregando…' : err.message, true); if (err.status === 409) abrir(atual.rel, { historia: false }); }
+  });
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-abrir]');
+    if (a) { e.preventDefault(); abrir(a.dataset.abrir); return; }
+    const anc = e.target.closest('[data-ancora]');
+    if (anc) { e.preventDefault(); document.getElementById(anc.dataset.ancora)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  });
+
+  // ---------- modos ----------
+  function definirModo(m, guardar = true) {
+    app.dataset.modo = m;
+    $$('[data-modo-btn]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.modoBtn === m)));
+    if (guardar) salvarPrefs({ modo: m });
+    if (m !== 'editar') renderizar();
+  }
+  function alternarModo() { definirModo(app.dataset.modo === 'ler' ? 'editar' : 'ler'); if (app.dataset.modo === 'editar') fonte.focus(); }
+  $$('[data-modo-btn]').forEach((b) => b.addEventListener('click', () => definirModo(b.dataset.modoBtn)));
+  definirModo(app.dataset.modo || 'dividir', false);
+
+  // ---------- busca e tags ----------
+  function mostrarAbaEsq(nome, focar = false) {
+    if (corpo.classList.contains('sem-esquerda')) alternarLado('esquerda');
+    if (ehCelular()) corpo.classList.add('mostrar-esquerda');
+    $$('[data-aba]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.aba === nome)));
+    $$('[data-painel]').forEach((p) => { p.hidden = p.dataset.painel !== nome; });
+    if (focar && nome === 'busca') $('[data-busca]').focus();
+  }
+  $$('[data-aba]').forEach((b) => b.addEventListener('click', () => mostrarAbaEsq(b.dataset.aba, true)));
+  $$('[data-aba-dir]').forEach((b) => b.addEventListener('click', () => {
+    $$('[data-aba-dir]').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
+    $$('[data-painel-dir]').forEach((p) => { p.hidden = p.dataset.painelDir !== b.dataset.abaDir; });
+  }));
+  let timerBusca;
+  $('[data-busca]').addEventListener('input', (e) => { clearTimeout(timerBusca); timerBusca = setTimeout(() => buscar(e.target.value), 250); });
+  async function buscar(q) {
+    const lista = $('[data-resultados]');
+    if (!q.trim()) { lista.innerHTML = ''; return; }
+    try {
+      const r = await obter(`/api/caderno/busca?q=${encodeURIComponent(q)}`);
+      lista.innerHTML = r.resultados.length ? r.resultados.map((x) => `<li><a href="${rotaDe(x.rel)}" data-abrir="${esc(x.rel)}"><b>${esc(x.nome)}</b>${x.trechos.map((t) => `<small>…${esc(t.antes)}<mark>${esc(t.achado)}</mark>${esc(t.depois)}…</small>`).join('')}</a></li>`).join('') : '<li class="vazio">Nada encontrado.</li>';
+    } catch (err) { avisar(err.message, true); }
+  }
+  function buscarTag(tag) { mostrarAbaEsq('busca'); $('[data-busca]').value = `tag:${tag}`; buscar(`tag:${tag}`); }
+  function desenharTags() {
+    $('[data-tags]').innerHTML = indice.tags.length ? indice.tags.map((t) => `<li><a href="#" data-tag-lista="${esc(t.tag)}"><span>#${esc(t.tag)}</span><small>${t.n}</small></a></li>`).join('') : '<li class="vazio">Nenhuma tag ainda. Escreva #algo numa nota.</li>';
+  }
+  $('[data-tags]').addEventListener('click', (e) => { const a = e.target.closest('[data-tag-lista]'); if (a) { e.preventDefault(); buscarTag(a.dataset.tagLista); } });
+
+  // ---------- grafo ----------
+  let pararGrafoFn = null;
+  function pararGrafo() { pararGrafoFn?.(); pararGrafoFn = null; }
+  async function abrirGrafo(historia = true) {
+    await fecharAtual();
+    if (historia) history.pushState(null, '', '/caderno/grafo');
+    esconderAreas();
+    $('[data-barra]').hidden = false; $('[data-modos]').hidden = true;
+    $('[data-migalha]').innerHTML = '<b>Grafo do cofre</b>'; mostrarEstado('', '');
+    document.title = 'Grafo · Caderno · std(dying)';
+    atual = { tipo: 'grafo' }; desenharArvore(); limparLateral();
+    const areaG = $('[data-grafo-area]'); areaG.hidden = false;
+    const cv = $('[data-grafo]');
+    const ctx = cv.getContext('2d');
+    const { nos, arestas } = await obter('/api/caderno/grafo');
+    const pixel = corpo.classList.contains('tema-pixel');
+    const css = getComputedStyle(corpo);
+    const cor = (v) => css.getPropertyValue(v).trim();
+    const fonteGrafo = pixel ? 'VT323, monospace' : css.fontFamily || 'system-ui';
+    const mapa = new Map(nos.map((n, i) => [n.id, Object.assign(n, { x: Math.cos(i) * 200 + Math.random() * 40, y: Math.sin(i) * 200 + Math.random() * 40, vx: 0, vy: 0, grau: 0 })]));
+    const ligs = arestas.map(([a, b]) => [mapa.get(a), mapa.get(b)]).filter(([a, b]) => a && b);
+    ligs.forEach(([a, b]) => { a.grau++; b.grau++; });
+    let zoom = 1, ox = 0, oy = 0, arrastoNo = null, arrastoTela = null, ativo = true, quente = 1;
+    function tamanho() { const r = cv.getBoundingClientRect(); const d = Math.min(2, devicePixelRatio || 1); cv.width = r.width * d; cv.height = r.height * d; ctx.setTransform(d, 0, 0, d, 0, 0); }
+    tamanho();
+    const aoRedim = () => tamanho(); addEventListener('resize', aoRedim);
+    const raio = (n) => (n.fantasma ? 3 : 4 + Math.min(10, Math.sqrt(n.grau) * 2.2));
+    function passo() {
+      if (quente > 0.02) {
+        const lista = [...mapa.values()];
+        for (let i = 0; i < lista.length; i++) for (let j = i + 1; j < lista.length; j++) {
+          const a = lista[i], b = lista[j]; let dx = a.x - b.x, dy = a.y - b.y; let d2 = dx * dx + dy * dy || 0.01;
+          if (d2 > 160000) continue; const f = 900 / d2; const d = Math.sqrt(d2); dx /= d; dy /= d;
+          a.vx += dx * f; a.vy += dy * f; b.vx -= dx * f; b.vy -= dy * f;
+        }
+        for (const [a, b] of ligs) { const dx = b.x - a.x, dy = b.y - a.y; const d = Math.sqrt(dx * dx + dy * dy) || 1; const f = (d - 90) * 0.012; a.vx += (dx / d) * f; a.vy += (dy / d) * f; b.vx -= (dx / d) * f; b.vy -= (dy / d) * f; }
+        for (const n of lista) { n.vx -= n.x * 0.002; n.vy -= n.y * 0.002; if (n !== arrastoNo) { n.x += n.vx * quente; n.y += n.vy * quente; } n.vx *= 0.6; n.vy *= 0.6; }
+        quente *= 0.995;
+      }
+      const w = cv.clientWidth, h = cv.clientHeight;
+      ctx.clearRect(0, 0, w, h);
+      ctx.save(); ctx.translate(w / 2 + ox, h / 2 + oy); ctx.scale(zoom, zoom);
+      ctx.strokeStyle = cor('--cd-linha-forte'); ctx.lineWidth = 1 / zoom;
+      for (const [a, b] of ligs) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+      for (const n of mapa.values()) {
+        const r = raio(n);
+        ctx.fillStyle = n.fantasma ? cor('--cd-cinza') : n.id === prefs.ultima ? cor('--cd-ouro') : cor('--cd-acento');
+        if (pixel) ctx.fillRect(Math.round(n.x - r), Math.round(n.y - r), r * 2, r * 2); else { ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2); ctx.fill(); }
+        if (zoom > 0.6 || n.grau > 2) { ctx.fillStyle = n.fantasma ? cor('--cd-cinza') : cor('--cd-texto'); ctx.font = `${pixel ? 16 : 11}px ${fonteGrafo}`; ctx.textAlign = 'center'; ctx.fillText(n.nome, n.x, n.y + r + (pixel ? 14 : 12)); }
+      }
+      ctx.restore();
+      if (ativo) requestAnimationFrame(passo);
+    }
+    requestAnimationFrame(passo);
+    const noEm = (x, y) => { const r = cv.getBoundingClientRect(); const gx = (x - r.left - r.width / 2 - ox) / zoom, gy = (y - r.top - r.height / 2 - oy) / zoom; return [...mapa.values()].find((n) => (n.x - gx) ** 2 + (n.y - gy) ** 2 <= (raio(n) + 4) ** 2) || null; };
+    let moveu = false;
+    cv.onpointerdown = (e) => { cv.setPointerCapture(e.pointerId); moveu = false; arrastoNo = noEm(e.clientX, e.clientY); arrastoTela = arrastoNo ? null : { x: e.clientX - ox, y: e.clientY - oy }; };
+    cv.onpointermove = (e) => {
+      if (arrastoNo) { moveu = true; const r = cv.getBoundingClientRect(); arrastoNo.x = (e.clientX - r.left - r.width / 2 - ox) / zoom; arrastoNo.y = (e.clientY - r.top - r.height / 2 - oy) / zoom; quente = Math.max(quente, 0.3); }
+      else if (arrastoTela) { moveu = true; ox = e.clientX - arrastoTela.x; oy = e.clientY - arrastoTela.y; }
+      else cv.style.cursor = noEm(e.clientX, e.clientY) ? 'pointer' : 'grab';
+    };
+    cv.onpointerup = (e) => { const n = arrastoNo; arrastoNo = null; arrastoTela = null; if (n && !moveu) { if (n.fantasma) criarNotaComNome(n.nome); else abrir(n.id); } };
+    cv.onwheel = (e) => { e.preventDefault(); zoom = Math.max(0.2, Math.min(4, zoom * (e.deltaY < 0 ? 1.12 : 0.89))); };
+    pararGrafoFn = () => { ativo = false; removeEventListener('resize', aoRedim); };
+  }
+
+  // ---------- laterais e comandos ----------
+  function alternarLado(lado) {
+    if (ehCelular()) { corpo.classList.toggle(lado === 'esquerda' ? 'mostrar-esquerda' : 'mostrar-direita'); return; }
+    const classe = lado === 'esquerda' ? 'sem-esquerda' : 'sem-direita';
+    corpo.classList.toggle(classe);
+    salvarPrefs({ [lado]: !corpo.classList.contains(classe) });
+  }
+  $('[data-centro]').addEventListener('pointerdown', () => {
+    if (ehCelular()) corpo.classList.remove('mostrar-esquerda', 'mostrar-direita');
+  });
+
+  async function sair() { await salvarAgora(); try { await api('/api/sair'); } catch {} location.href = '/entrar'; }
+  const acoes = {
+    'alternar-esquerda': () => alternarLado('esquerda'), 'alternar-direita': () => alternarLado('direita'),
+    'abrir-rapido': abrirRapido, paleta, 'nova-nota': () => novaNota(pastaAtual()), 'nova-pasta': () => novaPasta(pastaAtual()),
+    'novo-desenho': () => novoDesenho(pastaAtual()), diaria, grafo: () => abrirGrafo(),
+    recolher: () => { abertas.clear(); salvarPrefs({ abertas: [] }); desenharArvore(); }, sair,
+    mais: (b) => { const r = b.getBoundingClientRect(); if (atual?.rel) menuDoItem(atual.rel, atual.tipo, r.left - 160, r.bottom + 4); },
+  };
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && acoes[b.dataset.cmd]) { e.preventDefault(); acoes[b.dataset.cmd](b); } });
+
+  document.addEventListener('keydown', (e) => {
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (!modal.hidden) return;
+    if (ctrl && e.key.toLowerCase() === 'o') { e.preventDefault(); abrirRapido(); }
+    else if (ctrl && e.key.toLowerCase() === 'p') { e.preventDefault(); paleta(); }
+    else if (ctrl && e.key.toLowerCase() === 'n') { e.preventDefault(); novaNota(pastaAtual()); }
+    else if (ctrl && e.key.toLowerCase() === 'e' && atual?.tipo === 'nota') { e.preventDefault(); alternarModo(); }
+    else if (ctrl && e.key.toLowerCase() === 's') { e.preventDefault(); salvarAgora(); desenhoAberto?.salvarAgora(); }
+    else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); mostrarAbaEsq('busca', true); }
+    else if (e.key === 'F2' && atual?.rel) { e.preventDefault(); renomear(atual.rel, atual.tipo); }
+  });
+
+  // ---------- rotas (/caderno/n/…, /caderno/d/…, /caderno/grafo) ----------
+  function relDaRota() {
+    const m = /^\/caderno\/(n|d)\/(.+)$/.exec(location.pathname);
+    if (!m) return null;
+    try { return m[2].split('/').map(decodeURIComponent).join('/'); } catch { return null; }
+  }
+  function abrirPelaRota(historia = false) {
+    if (location.pathname === '/caderno/grafo') return abrirGrafo(historia);
+    const rel = relDaRota();
+    if (rel) return abrir(rel, { historia });
+    if (prefs.ultima) return abrir(prefs.ultima, { historia: false }).catch(() => mostrarVazio());
+    mostrarVazio();
+  }
+  // O menu ☰ do celular também usa o histórico (o "voltar" fecha a gaveta): mesma rota = nada a reabrir.
+  addEventListener('popstate', () => {
+    if (location.pathname === '/caderno/grafo' ? atual?.tipo === 'grafo' : relDaRota() === atual?.rel && !!atual?.rel) return;
+    if (location.pathname === '/caderno' && !atual) return;
+    abrirPelaRota(false);
+  });
+
+  (async () => {
+    try {
+      prefs = await obter('/api/caderno/preferencias');
+      abertas = new Set(prefs.abertas || []);
+      await recarregar();
+      abrirPelaRota(false);
+    } catch (err) { avisar(err.message, true); }
+  })();
 })();

@@ -1,8 +1,8 @@
 {
-  "name": "ayo-std",
-  "version": "1.9.0",
+  "name": "std-dying",
+  "version": "2.0.0",
   "private": true,
-  "description": "Ayo Std: painel de estudos que une os cofres do Obsidian (Dev, Carreira, ENEM, Manaus Previdência e BB), com cronograma semanal, revisões espaçadas e IA.",
+  "description": "std(dying): painel de estudos que une os cofres do Obsidian (Dev, Carreira, ENEM, Manaus Previdência e BB), com caderno de notas e caneta, cronograma semanal, revisões espaçadas e IA.",
   "type": "module",
   "engines": {
     "node": ">=22.13"
@@ -13,7 +13,8 @@
     "senha": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning server/scripts/senha.js",
     "fontes": "node server/scripts/copiar-fontes.js",
     "gerar-dev": "node server/scripts/gerar-trilha-dev.js",
-    "gerar-carreira": "node server/scripts/gerar-trilha-carreira.js"
+    "gerar-carreira": "node server/scripts/gerar-trilha-carreira.js",
+    "importar-sketchbook": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning server/scripts/importar-sketchbook.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

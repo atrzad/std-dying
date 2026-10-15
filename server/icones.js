@@ -39,6 +39,18 @@ const FORMAS = {
   parar: '<rect x="6" y="6" width="12" height="12" rx="1"/>',
   olho: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
   setas: '<path d="m8 9 4-4 4 4M8 15l4 4 4-4"/>',
+  // Caderno
+  documento: '<path d="M6 2h8l5 5v15H6Zm8 0v5h5M9 12h7m-7 4h7"/>',
+  'nota-nova': '<path d="M6 2h8l5 5v15H6Zm8 0v5h5m-6.5 4v7M9 14.5h7"/>',
+  'pasta-nova': '<path d="M3 6h6l2 3h10v11H3Zm9 5v6m-3-3h6"/>',
+  desenho: '<path d="m15 4 5 5-9 9H6v-5Z"/><path d="M3 21c3-2 5 1 8-1s5-1 7 0"/>',
+  sol: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/>',
+  grafo: '<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="8" r="2.5"/><circle cx="9" cy="18" r="2.5"/><path d="m8.3 7 7.4.6M7 8.3l1.4 7.3m8-5.6-5.8 6.3"/>',
+  busca: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 6 6"/>',
+  mais: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
+  'painel-esq': '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M9 4v16M5 8h2m-2 3h2"/>',
+  'painel-dir': '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M15 4v16m2-12h2m-2 3h2"/>',
+  comando: '<path d="m4 7 5 5-5 5m8 1h8"/>',
 };
 
 export function iconeUI(nome) {

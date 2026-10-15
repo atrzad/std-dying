@@ -1,4 +1,6 @@
+import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import express from 'express';
 import { config } from './config.js';
 import {
@@ -22,16 +24,17 @@ import {
 import * as grupo from './grupo.js';
 import { temaExiste } from './temas.js';
 import * as espaco from './espaco.js';
-import { enviarConfirmacao, emailConfigurado, urlPublica } from './email.js';
+import { enviarConfirmacao, emailConfigurado, urlPublica, urlPublicaDefinida } from './email.js';
 import * as foco from './foco.js';
-import * as caderno from './caderno.js';
+import { rotasDoCaderno, lerPreferencias as preferenciasDoCaderno } from './caderno/rotas.js';
+import { raizExistente, apagarCofreDe, listarArquivos as arquivosDoCaderno, lerTexto as lerDoCaderno, tipoDe as tipoNoCaderno } from './caderno/cofre.js';
 import * as revisoes from './revisoes.js';
 import * as cronograma from './cronograma.js';
 import * as ia from './ia.js';
-import { renderizarNota, renderizarTexto, renderizarEspacoNota } from './markdown.js';
+import { renderizarNota, renderizarTexto, renderizarEspacoNota, caminhoURL, esc } from './markdown.js';
 import { resumir, hojeISO, diasEntre, dataBR, somarDias, nomeCargo, metaPctNa } from './resumo.js';
 import {
-  paginaEntrar, paginaInicio, paginaTrilha, paginaNota, paginaErro, paginaFoco, paginaConfiguracoes, paginaCaderno, paginaCadernoEditor,
+  paginaEntrar, paginaInicio, paginaTrilha, paginaNota, paginaErro, paginaFoco, paginaConfiguracoes,
   paginaMensagem, paginaConvite, paginaConviteManual, paginaCriarConta, paginaGrupo, paginaMembro, paginaPrivacidade,
   paginaEspacos, paginaEspaco, paginaEspacoNota, paginaEspacoNotaEditar,
   paginaCronograma, paginaCronogramaModelo, paginaRevisoes, paginaIA, paginaIAResultado, htmlQuestoes,
@@ -262,6 +265,87 @@ async function opcoesDoModelo(u) {
 
 const textoEvento = (e) => ({ ...e, texto: e.detalhe });
 
+// ---------- Caderno ⇄ trilhas ----------
+
+// O cofre do Caderno do dono contém as pastas das trilhas. Nota de trilha que também está no Caderno da pessoa:
+// o caminho dela lá (botão "Editar no caderno"). Para as outras contas, o Caderno é outra pasta: null.
+async function relNoCaderno(u, abs) {
+  const raiz = await raizExistente(u);
+  if (!raiz) return null;
+  let real;
+  try { real = await fs.promises.realpath(abs); } catch { return null; }
+  return real.startsWith(raiz + path.sep) ? path.relative(raiz, real).split(path.sep).join('/') : null;
+}
+
+// O caminho inverso: arquivo do Caderno que fica dentro de uma trilha visível (botão "Ver na trilha").
+async function trilhaDoArquivo(u, abs) {
+  for (const t of trilhasDe(u)) {
+    let raiz;
+    try { raiz = await fs.promises.realpath(t.pasta); } catch { continue; }
+    if (!abs.startsWith(raiz + path.sep)) continue;
+    const rel = path.relative(raiz, abs).split(path.sep).join('/');
+    if (!rel.toLowerCase().endsWith('.md') || !podeVerArquivo(u, t.slug, rel)) return null;
+    return { slug: t.slug, nome: t.nome, curto: t.curto || t.nome, href: `/t/${t.slug}/n/${caminhoURL(rel)}` };
+  }
+  return null;
+}
+
+// Conta removida: o cofre do Caderno e as preferências dela vão junto.
+async function apagarDadosDoCaderno(id) {
+  db.prepare('DELETE FROM ajustes WHERE chave IN (?, ?)').run(`caderno:${id}`, `revisoes:${id}`);
+  try { await apagarCofreDe(id); } catch (e) { console.error('[caderno] não apagou o cofre da conta', id, e.message); }
+}
+
+// ---------- endereços antigos ----------
+
+// Por 30 dias, ayo-std e ayo-sketchbook.tail9ff58.ts.net levam ao endereço novo. Quem estava logado no endereço
+// antigo do Std leva a sessão junto: um passe de uso único (60 s) troca o cookie do endereço velho por um no novo.
+const passes = new Map();
+const hashPasse = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
+function criarPasse(usuarioId) {
+  const token = crypto.randomBytes(24).toString('base64url');
+  passes.set(hashPasse(token), { id: usuarioId, expira: Date.now() + 60_000 });
+  for (const [h, p] of passes) if (p.expira < Date.now()) passes.delete(h);
+  return token;
+}
+function usarPasse(token) {
+  const h = hashPasse(token);
+  const p = passes.get(h);
+  passes.delete(h);
+  return p && p.expira > Date.now() ? p.id : null;
+}
+
+// Caminhos do Ayo Sketchbook → Caderno.
+function caminhoDoSketchbook(caminho) {
+  if (caminho === '/entrar') return '/entrar';
+  if (caminho === '/grafo') return '/caderno/grafo';
+  if (caminho === '/nova' || /^\/(n|d|arquivo)\/./.test(caminho)) return `/caderno${caminho}`;
+  return '/caderno';
+}
+
+const ESTATICOS = /^\/(css|js|fonts)\/|^\/(icone\.svg|saude)$/;
+const hostDe = (req) => {
+  const bruto = String(req.headers.host || '').toLowerCase();
+  return bruto.startsWith('[') ? bruto.slice(0, bruto.indexOf(']') + 1) : bruto.split(':')[0];
+};
+function enderecoAntigo(req, res, next) {
+  const host = hostDe(req);
+  const doCaderno = config.enderecosAntigosCaderno.has(host);
+  if (!doCaderno && !config.enderecosAntigos.has(host)) return next();
+  if (!urlPublicaDefinida()) return next();
+  if (req.path.startsWith('/api/')) {
+    // abas abertas no endereço antigo do Std continuam salvando; as do Sketchbook falavam outra API
+    if (!doCaderno) return next();
+    return res.status(410).json({ erro: `O Sketchbook agora é o Caderno do std(dying): abra ${urlPublica()}/caderno` });
+  }
+  if (!['GET', 'HEAD'].includes(req.method) || ESTATICOS.test(req.path)) return next();
+  const busca = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+  const caminho = `${doCaderno ? caminhoDoSketchbook(req.path) : req.path}${busca}`;
+  const passe = req.usuario && !doCaderno ? `&t=${criarPasse(req.usuario.id)}` : '';
+  res.set('Cache-Control', 'no-store');
+  res.redirect(302, `${urlPublica()}/passe?para=${encodeURIComponent(caminho)}${passe}`);
+}
+
 // ---------- app ----------
 
 const app = express();
@@ -278,9 +362,7 @@ const ehLocal = (req) => {
 
 // Host desconhecido = possível DNS rebinding; nem chega às rotas.
 app.use((req, res, next) => {
-  const bruto = String(req.headers.host || '').toLowerCase();
-  const host = bruto.startsWith('[') ? bruto.slice(0, bruto.indexOf(']') + 1) : bruto.split(':')[0];
-  if (!config.hosts.has(host)) return res.status(421).type('text').send('Host não permitido.');
+  if (!config.hosts.has(hostDe(req))) return res.status(421).type('text').send('Host não permitido.');
   next();
 });
 
@@ -313,6 +395,20 @@ app.use((req, res, next) => {
   }
   next();
 });
+app.use(enderecoAntigo);
+
+// Chegada pelo endereço antigo. Com passe, vira uma sessão aqui. A navegação final sai desta página (meta refresh,
+// sem script): vinda de outro endereço, um redirecionamento direto chegaria sem o cookie SameSite=Strict.
+app.get('/passe', (req, res) => {
+  const bruto = String(req.query.para || '/');
+  const para = /^\/(?![/\\])[^\s\\]*$/.test(bruto) ? bruto : '/';
+  const id = req.query.t ? usarPasse(String(req.query.t)) : null;
+  if (id && !req.usuario) criarSessao(req, res, id);
+  res.set('Cache-Control', 'no-store');
+  res.type('html').send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${esc(para)}">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>std(dying)</title></head>
+<body><p>O Ayo Std agora é o <b>std(dying)</b>, neste endereço. <a href="${esc(para)}">Continuar</a></p></body></html>`);
+});
 
 // CSRF: além do cookie SameSite=Strict, toda escrita precisa vir da mesma origem e com um cabeçalho próprio.
 app.use('/api', (req, res, next) => {
@@ -326,9 +422,10 @@ app.use('/api', (req, res, next) => {
   if (req.headers['x-ayo'] !== '1') return res.status(403).json({ erro: 'Requisição inválida.' });
   next();
 });
-// O caderno manda desenhos inteiros (traços da caneta); o resto da API aceita pouco.
-app.use('/api/caderno', express.json({ limit: '5mb' }));
-app.use('/api', express.json({ limit: '20kb' }));
+// A API aceita pouco. O Caderno (notas inteiras, desenhos e anexos) tem limites próprios em caderno/rotas.js,
+// lidos só depois do login.
+const jsonPequeno = express.json({ limit: '20kb' });
+app.use('/api', (req, res, next) => (req.path.startsWith('/caderno/') ? next() : jsonPequeno(req, res, next)));
 
 // ---------- entrada ----------
 
@@ -483,6 +580,9 @@ app.use((req, res, next) => {
 
 const relDaRota = (req) => (Array.isArray(req.params.caminho) ? req.params.caminho.join('/') : String(req.params.caminho || ''));
 
+// Caderno: notas, desenhos, links e grafo do cofre de cada pessoa (o antigo Ayo Sketchbook).
+app.use(rotasDoCaderno({ comum, trilhaDoArquivo }));
+
 app.get('/', async (req, res) => {
   const u = req.usuario;
   const totais = foco.totais(u.id);
@@ -545,7 +645,8 @@ app.get('/t/:slug/n/*caminho', async (req, res) => {
   const { html, toc } = renderizarNota(nota, {
     slug: t.slug, arquivos, notas, trilhas: trilhasDe(u), feitasBanco, podeVer: (slug, r) => podeVerArquivo(u, slug, r),
   });
-  res.send(paginaNota({ ...(await comum(req)), t, nota, html, toc }));
+  const noCaderno = await relNoCaderno(u, nota.abs);
+  res.send(paginaNota({ ...(await comum(req)), t, nota, html, toc, linkCaderno: noCaderno ? `/caderno/n/${caminhoURL(noCaderno)}?editar=1` : null }));
 });
 
 app.get('/t/:slug/arquivo/*caminho', async (req, res) => {
@@ -595,29 +696,6 @@ app.get('/foco/exportar.csv', (req, res) => {
   res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="sessoes-de-foco-${hojeISO()}.csv"` });
   res.send(foco.exportarCSV(req.usuario.id));
 });
-
-// ---------- caderno ----------
-
-// O caderno saiu daqui: tudo leva ao Ayo Sketchbook (as anotações antigas foram migradas para o cofre de cada um).
-const SKETCHBOOK = (process.env.SKETCHBOOK_URL || 'http://localhost:3400').replace(/\/$/, '');
-app.get('/caderno', (req, res) => res.redirect(302, SKETCHBOOK));
-app.get('/caderno/nova', (req, res) => {
-  const titulo = String(req.query.assunto || '').slice(0, 100);
-  const tag = /^[a-z0-9-]{1,30}$/.test(String(req.query.trilha || '')) ? String(req.query.trilha) : '';
-  res.redirect(302, `${SKETCHBOOK}/nova?titulo=${encodeURIComponent(titulo)}${tag ? `&tags=${tag}` : ''}`);
-});
-app.get('/caderno/:id', (req, res) => res.redirect(302, SKETCHBOOK));
-app.get('/caderno/:id/exportar.md', (req, res) => res.redirect(302, SKETCHBOOK));
-
-app.post('/api/caderno/previa', (req, res) => {
-  const texto = String(req.body?.texto ?? '');
-  if (texto.length > 200_000) throw new ErroHttp(413, 'Texto grande demais.');
-  res.json({ html: renderizarTexto(texto) });
-});
-app.post('/api/caderno', (req, res) => res.json(caderno.criar(req.usuario.id, req.body ?? {}, slugsDe(req.usuario))));
-app.post('/api/caderno/:id/remover', (req, res) => { caderno.remover(req.usuario.id, idDaRota(req)); res.json({ ok: true }); });
-app.post('/api/caderno/:id', (req, res) => res.json(caderno.atualizar(req.usuario.id, idDaRota(req), req.body ?? {}, slugsDe(req.usuario))));
-
 
 // ---------- grupo de estudos ----------
 
@@ -942,7 +1020,23 @@ app.get('/configuracoes', async (req, res) => {
   }));
 });
 
-app.get('/configuracoes/meus-dados.json', (req, res) => {
+// Notas e desenhos do Caderno entram no arquivo (são texto); imagens e PDFs aparecem só pelo nome.
+// O cofre do dono é a pasta local do Obsidian: ali basta o caminho.
+async function cadernoParaExportar(u) {
+  if (u.dono && config.cofreDono) return { pasta: config.cofreDono, observacao: 'O Caderno do dono é a pasta local do Obsidian.' };
+  if (!(await raizExistente(u))) return { notas: [], anexos: [] };
+  const notas = [];
+  const anexos = [];
+  for (const rel of await arquivosDoCaderno(u)) {
+    const tipo = tipoNoCaderno(rel);
+    if (tipo === 'nota' || tipo === 'desenho') {
+      try { notas.push({ caminho: rel, texto: (await lerDoCaderno(u, rel)).texto }); } catch {}
+    } else anexos.push(rel);
+  }
+  return { notas, anexos };
+}
+
+app.get('/configuracoes/meus-dados.json', async (req, res) => {
   const id = req.usuario.id;
   const tudo = (sql) => db.prepare(sql).all(id);
   const dados = {
@@ -961,8 +1055,10 @@ app.get('/configuracoes/meus-dados.json', (req, res) => {
     revisoes: tudo('SELECT * FROM revisoes WHERE usuario_id = ?'),
     revisoes_log: tudo('SELECT * FROM revisoes_log WHERE usuario_id = ?'),
     ia_pedidos: tudo('SELECT * FROM ia_pedidos WHERE usuario_id = ?'),
+    caderno_preferencias: preferenciasDoCaderno(req.usuario),
+    caderno_cofre: await cadernoParaExportar(req.usuario),
   };
-  res.set({ 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="meus-dados-ayo-std-${hojeISO()}.json"` });
+  res.set({ 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="meus-dados-std-dying-${hojeISO()}.json"` });
   res.send(JSON.stringify(dados, null, 2));
 });
 
@@ -1146,6 +1242,7 @@ app.post('/api/conta/excluir', async (req, res) => {
   grupo.sairDoGrupo(u.id);
   db.prepare('DELETE FROM eventos WHERE usuario_id = ?').run(u.id);
   db.prepare('DELETE FROM usuarios WHERE id = ?').run(u.id);
+  await apagarDadosDoCaderno(u.id);
   encerrarSessao(req, res);
   res.json({ ok: true });
 });
@@ -1184,12 +1281,13 @@ app.post('/api/conta/usuarios/redefinir', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/conta/usuarios/remover', (req, res) => {
+app.post('/api/conta/usuarios/remover', async (req, res) => {
   exigirDono(req);
   const id = Number(req.body?.id);
   const alvo = listarUsuarios().find((x) => x.id === id);
   if (!alvo || alvo.dono) throw new ErroHttp(400, 'Essa conta não pode ser removida.');
   removerUsuario(id);
+  await apagarDadosDoCaderno(id);
   registrarEvento({ usuarioId: req.usuario.id, tipo: 'conta', detalhe: `Removeu a conta ${alvo.usuario}` });
   res.json({ ok: true });
 });
@@ -1216,12 +1314,13 @@ app.use(async (err, req, res, next) => {
 });
 
 const servidor = app.listen(config.porta, config.host, () => {
-  console.log(`[ayo-std] ouvindo em http://${config.host}:${config.porta} · dados em ${config.dataDir}`);
-  console.log(`[ayo-std] trilhas: ${listarTrilhas().map((t) => `${t.slug} → ${t.pasta}`).join(' | ')}`);
+  console.log(`[std-dying] ouvindo em http://${config.host}:${config.porta} · dados em ${config.dataDir}`);
+  console.log(`[std-dying] trilhas: ${listarTrilhas().map((t) => `${t.slug} → ${t.pasta}`).join(' | ')}`);
+  console.log(`[std-dying] caderno do dono: ${config.cofreDono || '(DATA_DIR/cofres)'}`);
 });
 
 function desligar(sinal) {
-  console.log(`[ayo-std] ${sinal} recebido, encerrando…`);
+  console.log(`[std-dying] ${sinal} recebido, encerrando…`);
   servidor.close(() => {
     db.close();
     process.exit(0);

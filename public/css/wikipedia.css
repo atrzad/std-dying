@@ -32,7 +32,7 @@
 .tema-wikipedia :focus-visible { outline: 2px solid var(--wiki-link); border-radius: 0; }
 .tema-wikipedia :is(.caixa, .btn, input, select, textarea, .tile, .modo span,
   .nav-item, .nav-nota, .navlat-recolher, .navlat-fechar, .hamburguer,
-  .tag, .ev-trilha, .selo-secao, .chamado, .citacao, .foco-pilula, .ed-abas button,
+  .tag, .ev-trilha, .selo-secao, .chamado, .citacao, .foco-pilula,
   .nota blockquote, .nota code, .nota .tarefa, .indice a, #aviso, #dica) {
   border-radius: 2px;
 }
@@ -44,7 +44,7 @@
 }
 .tema-wikipedia .titulo-gotico { font-size: clamp(29px, 3vw, 36px); }
 .tema-wikipedia .titulo-secao { font-size: 25px; padding-bottom: 5px; border-bottom: 1px solid var(--line); }
-.tema-wikipedia :is(.inicio-topo, .trilha-heroi, .conta-topo, .grupo-topo, .caderno-topo, .nota-cabeca) {
+.tema-wikipedia :is(.inicio-topo, .trilha-heroi, .conta-topo, .grupo-topo, .nota-cabeca) {
   padding-bottom: 18px; border-bottom: 1px solid var(--line);
 }
 .tema-wikipedia :is(.eyebrow, .nav-grupo, .cartao-nome, .foco-tipo, .foco-fixo-tipo, .citacao-tipo, .ev-trilha) {
@@ -54,8 +54,8 @@
 .tema-wikipedia .casca { grid-template-columns: 224px minmax(0, 1fr); }
 .tema-wikipedia .navlat { border-right: 0; padding: 14px 8px 0 16px; }
 .tema-wikipedia .navlat-topo { padding: 10px 6px 24px; border: 0; }
-.tema-wikipedia .marca-txt { font: small-caps 30px/1.2 var(--wiki-serif); gap: 5px; }
-.tema-wikipedia .marca-std { color: var(--ink); font-weight: 400; }
+.tema-wikipedia .marca-txt { font: 400 28px/1.2 var(--wiki-serif); gap: 1px; }
+.tema-wikipedia .marca-std { color: var(--muted); font-weight: 400; }
 .tema-wikipedia .navlat-recolher { border: 0; }
 .tema-wikipedia .navlat-rolagem { padding: 0 8px 16px 0; }
 .tema-wikipedia .nav-grupo { margin: 20px 10px 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--ink); }
@@ -88,7 +88,7 @@
 .tema-wikipedia .nota-titulo { color: var(--wiki-link); font-weight: 400; }
 .tema-wikipedia .btn { background: var(--surface-2); font-weight: 700; line-height: 1.3; }
 .tema-wikipedia .btn:hover { background: var(--wiki-highlight); text-decoration: none; filter: none; }
-.tema-wikipedia :is(.btn-ouro, .modo input:checked + span, .ed-abas button[aria-selected="true"]) {
+.tema-wikipedia :is(.btn-ouro, .modo input:checked + span) {
   background: var(--wiki-button); border-color: var(--wiki-button); color: var(--wiki-button-text);
 }
 .tema-wikipedia .btn-ouro:hover { filter: brightness(1.12); }
@@ -113,7 +113,7 @@
 .tema-wikipedia .nota a.quebrado { color: var(--ruim); }
 .tema-wikipedia .foco-fixo { box-shadow: none; }
 .tema-wikipedia .rodape { margin-top: 12px; padding-top: 18px; text-align: left; border-top: 1px solid var(--line); }
-.tema-wikipedia :is(.conta-grade, .membros, .bau, .cartoes, .caderno-grade) { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.tema-wikipedia :is(.conta-grade, .membros, .bau, .cartoes) { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
 .tema-wikipedia :is(.temas-lista, .conta-grade > *, .nota-cabeca > *, .trilha-heroi > *) { min-width: 0; }
 .tema-wikipedia .temas-lista { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 901px) {

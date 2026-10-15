@@ -1,4 +1,4 @@
-// Ayo Std: interações da página. Sem dependências; tudo que altera dados passa pelo cabeçalho X-Ayo.
+// std(dying): interações da página. Sem dependências; tudo que altera dados passa pelo cabeçalho X-Ayo.
 (() => {
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -16,7 +16,7 @@
         credentials: 'same-origin',
       });
     } catch {
-      throw Object.assign(new Error('Sem conexão com o servidor. Confira a internet ou se o Ayo Std está rodando.'), { status: 0 });
+      throw Object.assign(new Error('Sem conexão com o servidor. Confira a internet ou se o std(dying) está rodando.'), { status: 0 });
     }
     let corpo = {};
     try { corpo = await resp.json(); } catch {}

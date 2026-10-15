@@ -1,4 +1,4 @@
-/* Ayo Std: soulslike em pixel art.
+/* std(dying): soulslike em pixel art.
    Layout: fundo de pedra escura pontilhada; molduras de bronze com cantos recortados em degraus;
    títulos em gótico pixel; cada trilha acende a sua cor (Forja, Jornada, Templo, Fazenda). */
 :root {
@@ -124,10 +124,12 @@ main { display: grid; gap: 48px; padding-block: 36px 80px; }
 .marca { display: flex; align-items: flex-end; gap: 10px; text-decoration: none; color: inherit; }
 .marca-txt { display: flex; align-items: baseline; gap: 8px; }
 .marca-nome { font: 400 48px/.8 var(--f-gotico); color: var(--ouro-claro); text-shadow: 3px 3px 0 var(--sombra), 0 0 18px color-mix(in srgb, var(--brasa) 35%, transparent); }
-.marca-std {
-  font: 700 13px/1 var(--f-hud); letter-spacing: .14em; color: var(--sombra); background: var(--ouro);
-  padding: 5px 6px 4px; box-shadow: 2px 0 0 var(--ouro), -2px 0 0 var(--ouro), 0 2px 0 var(--bronze), 2px 2px 0 var(--sombra);
+.marca-std { /* "(dying)": vermelho da faixa de morte, sobre uma faixa escura */
+  font: 700 13px/1 var(--f-hud); letter-spacing: .1em; color: var(--sangue); padding: 5px 4px 4px;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, .85) 20% 80%, transparent);
+  text-shadow: 2px 2px 0 var(--sombra), 0 0 10px color-mix(in srgb, var(--sangue) 55%, transparent);
 }
+.titulo-dying { color: var(--sangue); text-shadow: 4px 4px 0 var(--sombra), 0 0 24px color-mix(in srgb, var(--sangue) 45%, transparent); }
 .navlat-recolher, .navlat-fechar {
   position: relative; z-index: 1; flex: none; display: grid; place-items: center; width: 36px; height: 36px; cursor: pointer;
   font: 400 22px/1 var(--f-mono); color: var(--apagado); background: var(--painel-2); border: 0; text-decoration: none;
@@ -607,18 +609,7 @@ td.num { font: 400 19px/1 var(--f-mono); }
   .foco-fixo-relogio { font-size: 26px; }
 }
 
-/* ---------- caderno ---------- */
-.caderno-topo { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 16px; }
-.caderno-filtros { display: grid; grid-template-columns: minmax(160px, 240px) minmax(0, 1fr) auto; gap: 12px; align-items: end; margin: 0 8px 22px; }
-.caderno-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 22px; }
-.caderno-cartao { display: grid; gap: 8px; align-content: start; padding: 16px 18px; text-decoration: none; color: var(--pergaminho); transition: transform .1s steps(2); }
-.caderno-cartao:hover { transform: translate(-2px, -2px); color: var(--pergaminho); }
-.cc-topo { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-.cc-topo time { font: 400 19px/1 var(--f-mono); color: var(--apagado); }
-.cc-titulo { font-size: 26px; line-height: 1.05; color: var(--osso); text-shadow: 1px 0 0 currentColor; }
-.cc-assunto { font: 400 11px/1.3 var(--f-hud); text-transform: uppercase; letter-spacing: .06em; color: var(--tc-claro); }
-.cc-trecho { font-size: 19px; color: var(--apagado); overflow-wrap: anywhere; }
-.cc-pe { font: 400 10px/1 var(--f-hud); text-transform: uppercase; letter-spacing: .06em; color: var(--cinza); }
+/* ---------- anotações da trilha e editor de notas do Meu espaço (o Caderno fica em caderno.css) ---------- */
 .anotacoes-trilha { padding: 14px 18px; display: grid; gap: 12px; margin: 8px; }
 .anotacoes-trilha ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .anotacoes-trilha li { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
@@ -631,36 +622,11 @@ td.num { font: 400 19px/1 var(--f-mono); }
 .ed-status[data-estado="sujo"], .ed-status[data-estado="salvando"] { color: var(--aviso); }
 .ed-status[data-estado="erro"] { color: var(--ruim); }
 .ed-acoes { display: flex; gap: 10px; align-items: center; }
-.ed-cabecalho { padding: 18px; display: grid; gap: 14px; }
 .ed-titulo { font: 400 48px/1.1 var(--f-gotico); color: var(--ouro-claro); background: transparent; box-shadow: none; padding: 4px 2px; text-shadow: 3px 3px 0 var(--sombra); }
 .ed-titulo:focus { box-shadow: 0 2px 0 var(--ouro-claro); }
 .ed-titulo::placeholder { color: var(--cinza); }
-.ed-meta { display: grid; grid-template-columns: 170px minmax(160px, 240px) minmax(0, 1fr); gap: 14px; }
-.ed-abas { display: flex; gap: 6px; margin: 0 8px; }
-.ed-abas button { font: 400 13px/1 var(--f-hud); text-transform: uppercase; letter-spacing: .08em; color: var(--apagado); background: var(--poco); border: 0; padding: 11px 18px 10px; cursor: pointer;
-  box-shadow: -2px 0 0 var(--borda), 2px 0 0 var(--borda), 0 -2px 0 var(--borda), 0 2px 0 var(--borda); margin: 2px; }
-.ed-abas button[aria-selected="true"] { color: var(--sombra); background: var(--tc); box-shadow: -2px 0 0 var(--tc-claro), 2px 0 0 var(--tc-claro), 0 -2px 0 var(--tc-claro), 0 2px 0 var(--tc-claro); }
 .ed-painel { padding: 18px; display: grid; gap: 14px; }
-.ed-barra { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: end; }
 .ed-texto { min-height: 320px; resize: vertical; font: 400 22px/1.4 var(--f-mono); padding: 14px 16px; }
-.ed-previa { padding: 4px 4px 12px; }
-.ed-ferramentas { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: end; }
-.cores { border: 0; padding: 0; margin: 0; }
-.cores legend { font: 400 11px/1 var(--f-hud); text-transform: uppercase; letter-spacing: .08em; color: var(--apagado); margin-bottom: 8px; }
-.cores > span { display: flex; gap: 8px; }
-.cor { width: 26px; height: 26px; border: 0; padding: 0; cursor: pointer; box-shadow: 0 0 0 2px var(--borda); margin: 2px; }
-.cor.ativa { box-shadow: 0 0 0 2px var(--sombra), 0 0 0 4px var(--ouro-claro); }
-.ed-botoes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.folha {
-  --linha: 44px;
-  position: relative; background-color: #efe6d2; margin: 4px;
-  background-image:
-    linear-gradient(90deg, transparent calc(var(--linha) * 1.6), rgba(170, 60, 50, .35) calc(var(--linha) * 1.6), rgba(170, 60, 50, .35) calc(var(--linha) * 1.6 + 2px), transparent calc(var(--linha) * 1.6 + 2px)),
-    repeating-linear-gradient(180deg, transparent 0, transparent calc(var(--linha) - 2px), rgba(90, 70, 40, .18) calc(var(--linha) - 2px), rgba(90, 70, 40, .18) var(--linha));
-  box-shadow: -4px 0 0 var(--bronze), 4px 0 0 var(--bronze), 0 -4px 0 var(--bronze), 0 4px 0 var(--bronze), 8px 8px 0 4px var(--sombra);
-}
-.folha canvas { display: block; touch-action: none; cursor: crosshair; }
-.folha.apagando canvas { cursor: cell; }
 
 /* citação do dia */
 .citacao { margin: 4px 0 0; padding: 16px 20px 14px; max-width: 64ch; display: grid; gap: 8px; justify-items: start;
@@ -813,7 +779,6 @@ td.num { font: 400 19px/1 var(--f-mono); }
   .nota-acoes { grid-template-columns: 1fr; }
   .form-projecao { grid-template-columns: 1fr; }
   .foco-grade, .campos-foco { grid-template-columns: 1fr; }
-  .caderno-filtros, .ed-meta { grid-template-columns: 1fr; }
   .relogio-grande { font-size: 64px; }
   .nota-botoes { grid-column: 1; grid-row: auto; }
   .foco-pilula-txt { display: none; }

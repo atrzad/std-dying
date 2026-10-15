@@ -9,9 +9,8 @@ import { DIAS, DIAS_CURTOS, FONTES, TODAS } from './cronograma.js';
 import { RESULTADOS, ORIGENS, PRESETS, rotuloEtapa } from './revisoes.js';
 import { TAREFAS, MODOS as MODOS_IA, ESTILOS, DIFICULDADES, QUANTIDADES } from './ia.js';
 
-// O caderno saiu do Ayo Std: as anotações vivem no Ayo Sketchbook (site próprio, mesma conta).
-const SKETCHBOOK = (process.env.SKETCHBOOK_URL || 'http://localhost:3400').replace(/\/$/, '');
-const linkAnotar = (titulo, tag) => `${SKETCHBOOK}/nova?titulo=${encodeURIComponent(titulo || '')}${tag ? `&amp;tags=${encodeURIComponent(tag)}` : ''}`;
+// "Anotar": abre uma nota nova no Caderno, já com o título e a tag da trilha.
+const linkAnotar = (titulo, tag) => `/caderno/nova?titulo=${encodeURIComponent(titulo || '')}${tag ? `&amp;tags=${encodeURIComponent(tag)}` : ''}`;
 
 const fmt = new Intl.NumberFormat('pt-BR');
 const pctTxt = (v) => (v == null ? '—' : `${Math.round(v)}%`);
@@ -77,6 +76,9 @@ function barraFoco(foco, px, trilhas) {
 // Todos os temas usam os mesmos símbolos, com as cores da própria paleta.
 const icone = (nome) => `<span class="nav-icone">${iconeUI(nome)}</span>`;
 
+// O nome: "std(dying)". No tema pixel, o "(dying)" vem em vermelho, como a faixa de morte.
+const MARCA_TXT = '<span class="marca-txt"><span class="marca-nome">std</span><span class="marca-std">(dying)</span></span>';
+
 // Navegação: barra lateral fixa no computador; no celular, gaveta aberta pelo botão ☰ do cabeçalho.
 // Funciona sem JavaScript: o ☰ é um link para #navegacao e a gaveta abre por :target.
 function navegacao({ px, ativo, usuario, trilhas, almas, notaAtual }) {
@@ -108,14 +110,14 @@ function navegacao({ px, ativo, usuario, trilhas, almas, notaAtual }) {
       pendentes ? `<b class="nav-badge" title="${pendentes} ${pendentes === 1 ? 'revisão' : 'revisões'} para hoje">${pendentes}</b>` : ''),
     item('ia', '/ia', 'IA', icone('ia')),
     item('espaco', '/espaco', 'Meu espaço', icone('pasta')),
-    `<a class="nav-item t-caderno" href="${SKETCHBOOK}" title="Abrir o Ayo Sketchbook (notas e caneta)">${icone('caderno')}<span class="nav-rot">Sketchbook ↗</span></a>`,
+    item('caderno', '/caderno', 'Caderno', icone('caderno')),
     item('grupo', '/grupo', 'Grupo', icone('grupo')),
   ].map((a) => `<li>${a}</li>`).join('');
   return `
   <nav class="navlat" id="navegacao" aria-label="Navegação">
     <div class="navlat-topo">
       ${px ? `<div class="brasas" aria-hidden="true">${'<i></i>'.repeat(10)}</div>` : ''}
-      <a class="marca" href="/" aria-label="Ayo Std, início">${px ? sprite('fogueira', { escala: 3 }) : ''}<span class="marca-txt"><span class="marca-nome">Ayo</span><span class="marca-std">Std</span></span></a>
+      <a class="marca" href="/" aria-label="std(dying), início">${px ? sprite('fogueira', { escala: 3 }) : ''}${MARCA_TXT}</a>
       <button type="button" class="navlat-recolher" data-nav-recolher aria-pressed="false" title="Recolher a barra lateral">${iconeUI('recolher')}<span class="visivel-leitor">Recolher a barra lateral</span></button>
       <a class="navlat-fechar" href="#" data-nav-fechar title="Fechar o menu">${iconeUI('fechar')}<span class="visivel-leitor">Fechar o menu</span></a>
     </div>
@@ -138,7 +140,7 @@ function navegacao({ px, ativo, usuario, trilhas, almas, notaAtual }) {
   <a class="nav-fundo" href="#" data-nav-fechar tabindex="-1" aria-hidden="true"></a>`;
 }
 
-export function layout({ titulo, ativo = 'inicio', usuario = null, corpo, classe = '', trilhas = [], almas = null, foco = null, scripts = [], notaAtual = null }) {
+export function layout({ titulo, ativo = 'inicio', usuario = null, corpo, classe = '', trilhas = [], almas = null, foco = null, scripts = [], estilos = [], notaAtual = null }) {
   const px = ehPixel(usuario);
   const wiki = temaPorId(usuario?.temaId || usuario?.tema).wikipedia;
   const esquema = px ? 'dark' : wiki && wiki !== 'auto' ? wiki : 'light dark';
@@ -146,7 +148,7 @@ export function layout({ titulo, ativo = 'inicio', usuario = null, corpo, classe
     <header class="topo-movel">
       ${px ? `<div class="brasas" aria-hidden="true">${'<i></i>'.repeat(8)}</div>` : ''}
       <a class="hamburguer" href="#navegacao" data-nav-abrir aria-controls="navegacao" aria-expanded="false" title="Abrir o menu"><span class="hamburguer-linhas" aria-hidden="true"><i></i><i></i><i></i></span><span class="visivel-leitor">Abrir o menu</span></a>
-      <a class="marca" href="/" aria-label="Ayo Std, início">${px ? sprite('fogueira', { escala: 2 }) : ''}<span class="marca-txt"><span class="marca-nome">Ayo</span><span class="marca-std">Std</span></span></a>
+      <a class="marca" href="/" aria-label="std(dying), início">${px ? sprite('fogueira', { escala: 2 }) : ''}${MARCA_TXT}</a>
       ${px && almas != null ? `<span class="almas" title="Lágrimas: tarefas concluídas">${sprite('lagrima', { escala: 2 })}<b>${fmt.format(almas)}</b></span>` : ''}
     </header>` : '';
   const rodape = `<footer class="rodape envolve"><a href="/privacidade">Privacidade e regras</a>${usuario ? ' · <a href="/configuracoes">Configurações</a>' : ' · <a href="/convite">Tenho um convite</a>'}</footer>`;
@@ -162,13 +164,14 @@ ${rodape}`;
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="${esquema}">
-<title>${esc(titulo ? `${titulo} · Ayo Std` : 'Ayo Std')}</title>
+<title>${esc(titulo ? `${titulo} · std(dying)` : 'std(dying)')}</title>
 <link rel="icon" href="/icone.svg" type="image/svg+xml">
 ${px ? '<link rel="stylesheet" href="/css/fontes.css">\n<link rel="stylesheet" href="/css/ayo.css">' : '<link rel="stylesheet" href="/css/normal.css">'}
 <link rel="stylesheet" href="/css/temas.css">
 ${wiki ? '<link rel="stylesheet" href="/css/wikipedia.css">' : ''}
 <link rel="stylesheet" href="/css/icones.css">
 <link rel="stylesheet" href="/css/planejamento.css">
+${estilos.map((href) => `<link rel="stylesheet" href="${href}">`).join('\n')}
 ${usuario && foco ? '<link rel="stylesheet" href="/css/pomodoro.css">' : ''}
 <script src="/js/ayo.js" defer></script>
 ${scripts.map((src) => `<script src="${src}" defer></script>`).join('\n')}
@@ -220,7 +223,7 @@ export function paginaEntrar({ primeira = false, local = true, voltar = '' }) {
     <section class="cena-fogueira">
       <div class="brasas grandes" aria-hidden="true">${'<i></i>'.repeat(18)}</div>
       <div class="fogueira-grande">${sprite('fogueira', { escala: 8 })}</div>
-      <h1 class="titulo-gotico">Ayo Std</h1>
+      <h1 class="titulo-gotico">std<span class="titulo-dying">(dying)</span></h1>
       <p class="sub">${esc(titulo)}</p>
       <div class="caixa caixa-entrar">
         <p>${esc(texto)}</p>
@@ -539,8 +542,8 @@ export function paginaTrilha({ usuario, trilhas, almas, foco, t, info, notas, ar
         <ul class="notas caixa">${listaNotas || '<li class="vazio">Nenhuma nota encontrada.</li>'}</ul>
         <h2 class="titulo-secao">Anotações</h2>
         <div class="caixa anotacoes-trilha">
-          <p>As anotações agora ficam no <b>Ayo Sketchbook</b>: notas em Markdown, links entre notas e desenho à caneta, com a mesma conta.</p>
-          <div class="foco-botoes"><a class="btn btn-ouro" href="${linkAnotar(t.nome, t.slug)}">${acao('editar', 'Nova anotação desta trilha')}</a><a class="btn" href="${SKETCHBOOK}">${acao('link', 'Abrir o Sketchbook ↗')}</a></div>
+          <p>As anotações ficam no <b>Caderno</b>: notas em Markdown, links entre notas, grafo e desenho à caneta.</p>
+          <div class="foco-botoes"><a class="btn btn-ouro" href="${linkAnotar(t.nome, t.slug)}">${acao('editar', 'Nova anotação desta trilha')}</a><a class="btn" href="/caderno">${acao('caderno', 'Abrir o Caderno')}</a></div>
         </div>
         ${evs ? `<h2 class="titulo-secao">Últimas ações</h2>${evs}` : ''}
       </section>
@@ -557,7 +560,7 @@ export function paginaTrilha({ usuario, trilhas, almas, foco, t, info, notas, ar
 
 // ---------- nota ----------
 
-export function paginaNota({ usuario, trilhas, almas, foco, t, nota, html, toc }) {
+export function paginaNota({ usuario, trilhas, almas, foco, t, nota, html, toc, linkCaderno = null }) {
   const px = ehPixel(usuario);
   const pct = nota.total ? (100 * nota.feitas) / nota.total : null;
   const indice = toc.length > 1 ? `
@@ -582,7 +585,8 @@ export function paginaNota({ usuario, trilhas, almas, foco, t, nota, html, toc }
         ${medidor(pct, { rotulo: 'Progresso da nota', classe: 'tc', marca: ' data-nota-medidor' })}` : ''}
         <div class="nota-botoes">
           <a class="btn" href="/foco?trilha=${t.slug}&amp;assunto=${encodeURIComponent(nota.tituloCurto)}">${acao('foco', 'Focar nesta nota')}</a>
-          <a class="btn" href="${linkAnotar(nota.tituloCurto, t.slug)}">${acao('editar', 'Anotar')}</a>
+          ${linkCaderno ? `<a class="btn" href="${esc(linkCaderno)}">${acao('editar', 'Editar no caderno')}</a>` : ''}
+          <a class="btn" href="${linkAnotar(nota.tituloCurto, t.slug)}">${acao('adicionar', 'Anotar')}</a>
           ${px ? `<a class="btn" href="obsidian://open?path=${encodeURIComponent(nota.abs)}">${acao('link', 'Abrir no Obsidian')}</a>` : ''}
         </div>
       </div>
@@ -714,131 +718,7 @@ export function paginaFoco({ usuario, trilhas, almas, foco, totais, recentes, as
   });
 }
 
-// ---------- caderno ----------
-
-const resumoTexto = (t) => String(t || '').replace(/```[\s\S]*?```/g, ' ').replace(/[#>*_`~\[\]()|-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
-
-export function paginaCaderno({ usuario, trilhas, almas, foco, anotacoes, filtroTrilha, busca }) {
-  const px = ehPixel(usuario);
-  const curto = (slug) => trilhas.find((t) => t.slug === slug)?.curto || '';
-  const cartoes = anotacoes.length ? anotacoes.map((a) => `
-    <a class="caderno-cartao caixa t-${esc(a.trilha || 'inicio')}" href="/caderno/${a.id}">
-      <span class="cc-topo"><time>${dataBR(a.data)}</time>${a.trilha ? `<span class="ev-trilha t-${esc(a.trilha)}">${esc(curto(a.trilha))}</span>` : ''}</span>
-      <span class="cc-titulo">${esc(a.titulo || 'Sem título')}</span>
-      ${a.assunto ? `<span class="cc-assunto">${esc(a.assunto)}</span>` : ''}
-      <span class="cc-trecho">${esc(resumoTexto(a.trecho)) || (a.tem_desenho ? '' : '<i>Vazia</i>')}</span>
-      <span class="cc-pe">${a.formato === 'md' ? 'Markdown' : 'Texto'}${a.tem_desenho ? ' · ✎ com desenho' : ''}</span>
-    </a>`).join('') : `<p class="vazio">${busca || filtroTrilha ? 'Nenhuma anotação com esse filtro.' : 'Seu caderno está vazio. Comece pela primeira anotação.'}</p>`;
-  return layout({
-    titulo: 'Caderno',
-    ativo: 'caderno',
-    usuario,
-    trilhas,
-    almas,
-    foco,
-    classe: 'pg-caderno',
-    corpo: `
-    <section class="envolve caderno-topo">
-      <div>
-        <p class="eyebrow">Anotações</p>
-        <h1 class="titulo-gotico">Caderno</h1>
-      </div>
-      <a class="btn btn-ouro" href="/caderno/nova${filtroTrilha ? `?trilha=${filtroTrilha}` : ''}">Nova anotação</a>
-    </section>
-    <section class="envolve">
-      <form class="caderno-filtros" method="get" action="/caderno">
-        <label>Trilha<select name="trilha"><option value="">Todas</option>${trilhas.map((t) => `<option value="${t.slug}"${t.slug === filtroTrilha ? ' selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></label>
-        <label class="largo">Buscar<input name="q" value="${esc(busca)}" placeholder="Título, assunto ou texto" maxlength="80"></label>
-        <button class="btn" type="submit">${acao('filtrar', 'Filtrar')}</button>
-      </form>
-      <div class="caderno-grade">${cartoes}</div>
-    </section>`,
-  });
-}
-
-const CORES_TINTA = ['#1d1d1f', '#1f4fbf', '#c0392b', '#2e7d32', '#7b3fb5', '#b8860b'];
-const CORES_MARCA = ['#ffd54f', '#a5e887', '#ff9ec4', '#8fd3ff'];
-
-export function paginaCadernoEditor({ usuario, trilhas, almas, foco, nota, assuntos, prefill }) {
-  const px = ehPixel(usuario);
-  const n = nota || { id: '', versao: 0, titulo: '', data: prefill.data, trilha: prefill.trilha || null, assunto: prefill.assunto || '', formato: 'md', texto: '', desenho: null };
-  const abaInicial = n.desenho && !n.texto ? 'caneta' : 'texto';
-  const desenhoJSON = (n.desenho || 'null').replace(/</g, '\\u003c');
-  return layout({
-    titulo: n.titulo || 'Nova anotação',
-    ativo: 'caderno',
-    usuario,
-    trilhas,
-    almas,
-    foco,
-    classe: `pg-caderno-editor t-${esc(n.trilha || 'inicio')}`,
-    scripts: ['/js/caderno.js'],
-    corpo: `
-    <div class="caderno-editor envolve" data-caderno data-id="${n.id}" data-versao="${n.versao}" data-aba="${abaInicial}">
-      <div class="ed-topo">
-        <a class="btn" href="/caderno">← Caderno</a>
-        <span class="ed-status" data-status role="status">${nota ? 'Salvo' : 'Nova anotação: salva sozinha quando você começar a escrever'}</span>
-        <span class="ed-acoes">
-          ${nota ? `<a class="btn" href="/caderno/${n.id}/exportar.md">Exportar .md</a>
-          <button type="button" class="btn-x" data-caderno-remover="${n.id}">Apagar</button>` : ''}
-        </span>
-      </div>
-      <section class="caixa ed-cabecalho">
-        <input class="ed-titulo" name="titulo" placeholder="Título" maxlength="200" value="${esc(n.titulo)}" aria-label="Título" autocomplete="off">
-        <div class="ed-meta">
-          <label>Data<input type="date" name="data" value="${esc(n.data)}" required></label>
-          <label>Trilha<select name="trilha"><option value="">Sem trilha</option>${trilhas.map((t) => `<option value="${t.slug}"${t.slug === n.trilha ? ' selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></label>
-          <label class="largo">Assunto<input name="assunto" maxlength="120" value="${esc(n.assunto)}" list="assuntos-${esc(n.trilha || '')}" placeholder="Escolha da lista ou escreva" autocomplete="off"></label>
-        </div>
-        ${Object.entries(assuntos).map(([slug, lista]) => `<datalist id="assuntos-${esc(slug)}">${lista.map((a) => `<option value="${esc(a)}">`).join('')}</datalist>`).join('')}
-      </section>
-      <div class="ed-abas" role="tablist" aria-label="Modo de anotação">
-        <button type="button" role="tab" data-aba-botao="texto" aria-selected="${abaInicial === 'texto'}">Texto</button>
-        <button type="button" role="tab" data-aba-botao="caneta" aria-selected="${abaInicial === 'caneta'}">Caneta</button>
-      </div>
-      <section class="caixa ed-painel" data-painel="texto"${abaInicial === 'texto' ? '' : ' hidden'}>
-        <div class="ed-barra">
-          <fieldset class="modos"><legend>Formato</legend>
-            <label class="modo"><input type="radio" name="formato" value="md"${n.formato === 'md' ? ' checked' : ''}><span>Markdown</span></label>
-            <label class="modo"><input type="radio" name="formato" value="txt"${n.formato === 'txt' ? ' checked' : ''}><span>Texto simples</span></label>
-          </fieldset>
-          <button type="button" class="btn" data-previa-botao${n.formato === 'md' ? '' : ' hidden'}>Visualizar</button>
-        </div>
-        <textarea class="ed-texto${n.formato === 'txt' ? ' simples' : ''}" name="texto" spellcheck="true" placeholder="${n.formato === 'md' ? 'Escreva aqui. Markdown: # título, **negrito**, - lista, - [ ] tarefa' : 'Escreva aqui.'}" aria-label="Texto da anotação">${esc(n.texto)}</textarea>
-        <div class="nota ed-previa" data-previa hidden></div>
-      </section>
-      <section class="caixa ed-painel" data-painel="caneta"${abaInicial === 'caneta' ? '' : ' hidden'}>
-        <div class="ed-ferramentas" role="toolbar" aria-label="Ferramentas da caneta">
-          <fieldset class="modos"><legend>Ferramenta</legend>
-            <label class="modo"><input type="radio" name="ferramenta" value="caneta" checked><span>Caneta</span></label>
-            <label class="modo"><input type="radio" name="ferramenta" value="marca"><span>Marca-texto</span></label>
-            <label class="modo"><input type="radio" name="ferramenta" value="borracha"><span>Borracha</span></label>
-          </fieldset>
-          <fieldset class="cores"><legend>Cor</legend>
-            <span data-cores="caneta">${CORES_TINTA.map((c, i) => `<button type="button" class="cor${i === 0 ? ' ativa' : ''}" data-cor="${c}" aria-label="Cor ${c}"></button>`).join('')}</span>
-            <span data-cores="marca" hidden>${CORES_MARCA.map((c, i) => `<button type="button" class="cor${i === 0 ? ' ativa' : ''}" data-cor="${c}" aria-label="Marca-texto ${c}"></button>`).join('')}</span>
-          </fieldset>
-          <fieldset class="modos"><legend>Traço</legend>
-            <label class="modo"><input type="radio" name="espessura" value="2"><span>Fino</span></label>
-            <label class="modo"><input type="radio" name="espessura" value="3.5" checked><span>Médio</span></label>
-            <label class="modo"><input type="radio" name="espessura" value="7"><span>Grosso</span></label>
-          </fieldset>
-          <div class="ed-botoes">
-            <button type="button" class="btn" data-desenho="desfazer" aria-label="Desfazer">↶ Desfazer</button>
-            <button type="button" class="btn" data-desenho="refazer" aria-label="Refazer">↷ Refazer</button>
-            <button type="button" class="btn" data-desenho="pagina">+ Página</button>
-            <button type="button" class="btn" data-desenho="png">Baixar PNG</button>
-            <button type="button" class="btn-x" data-desenho="limpar">Limpar tudo</button>
-          </div>
-          <label class="som"><input type="checkbox" data-so-caneta> Só a caneta desenha (o dedo rola a página)</label>
-        </div>
-        <div class="folha" data-folha><canvas data-canvas aria-label="Folha de desenho"></canvas></div>
-        <p class="ajuda">Com S Pen, Apple Pencil ou mesa digitalizadora, a espessura segue a pressão. O botão de borracha da caneta apaga.</p>
-      </section>
-      <script type="application/json" id="desenho-dados">${desenhoJSON}</script>
-    </div>`,
-  });
-}
+// ---------- caderno: ver paginaCaderno (fim do arquivo) ----------
 
 // ---------- conta: ver paginaConfiguracoes ----------
 
@@ -1016,7 +896,7 @@ export function paginaConvite({ usuario, convite, codigo, grupoAtual }) {
       : `<p class="eyebrow">Convite</p><h1 class="titulo-gotico">${esc(convite.grupo_nome)}</h1><p>Você foi convidado(a) para este grupo de estudos. Ao entrar, você escolhe o que compartilhar.</p>
         <div class="foco-botoes"><button type="button" class="btn btn-ouro" data-acao-url="/api/convite/aceitar" data-acao-corpo='{"codigo":"${esc(convite.codigo)}"}' data-acao-ir="/grupo">Entrar no grupo</button></div>`;
   } else {
-    corpo = `<p class="eyebrow">Convite</p><h1 class="titulo-gotico">${esc(convite.grupo_nome)}</h1><p>Você foi convidado(a) para este grupo de estudos no Ayo Std.</p>
+    corpo = `<p class="eyebrow">Convite</p><h1 class="titulo-gotico">${esc(convite.grupo_nome)}</h1><p>Você foi convidado(a) para este grupo de estudos no std(dying).</p>
       <div class="foco-botoes"><a class="btn btn-ouro" href="/criar-conta?convite=${esc(convite.codigo)}">Criar minha conta</a>
       <a class="btn" href="/entrar?voltar=${encodeURIComponent(`/convite/${convite.codigo}`)}">Já tenho conta</a></div>`;
   }
@@ -1128,7 +1008,7 @@ export function paginaEspaco({ usuario, trilhas, almas, foco, e, notas, cores, p
       </section>
       <aside class="lateral">
         <section class="caixa"><h3>Usar esta trilha</h3><div class="foco-botoes">
-          <a class="btn btn-ouro" href="/foco?trilha=e${e.id}">${acao('iniciar', 'Começar um pomodoro')}</a><a class="btn" href="${linkAnotar(e.nome, '')}">${acao('editar', 'Anotar no Sketchbook')}</a></div></section>
+          <a class="btn btn-ouro" href="/foco?trilha=e${e.id}">${acao('iniciar', 'Começar um pomodoro')}</a><a class="btn" href="${linkAnotar(e.nome, '')}">${acao('editar', 'Anotar no Caderno')}</a></div></section>
         <section class="caixa"><h3>Editar trilha</h3>
           <form data-form="espaco-editar" data-espaco="${e.id}" class="form-conta" novalidate>
             <label>Nome<input name="nome" maxlength="60" required value="${esc(e.nome)}"></label>
@@ -1737,5 +1617,109 @@ export function paginaIAResultado({ usuario, trilhas, almas, foco, pedido, conte
         </div>
       </div>
     </section>`,
+  });
+}
+
+// ---------- caderno ----------
+
+// O Caderno (o antigo Ayo Sketchbook): três painéis como o Obsidian, dentro do layout do site.
+// Árvore, nota aberta, busca, links e grafo são montados por /js/caderno.js com a API /api/caderno.
+export function paginaCaderno({ usuario, trilhas, almas, foco, prefs = {} }) {
+  const px = ehPixel(usuario);
+  const botao = (cmd, rotulo, ic, extra = '') => `<button type="button" class="cd-ico" data-cmd="${cmd}" title="${esc(rotulo)}" aria-label="${esc(rotulo)}"${extra}>${iconeUI(ic)}</button>`;
+  const classe = ['pg-caderno', prefs.esquerda === false ? 'sem-esquerda' : '', prefs.direita === false ? 'sem-direita' : ''].filter(Boolean).join(' ');
+  return layout({
+    titulo: 'Caderno',
+    ativo: 'caderno',
+    usuario,
+    trilhas,
+    almas,
+    foco,
+    classe,
+    estilos: ['/css/caderno.css'],
+    scripts: ['/js/desenho.js', '/js/caderno.js'],
+    corpo: `
+    <div class="cd" data-app data-modo="${esc(prefs.modo || 'dividir')}">
+      <div class="cd-topo">
+        ${botao('alternar-esquerda', 'Arquivos, busca e tags', 'painel-esq')}
+        <button type="button" class="cd-rapida" data-cmd="abrir-rapido">${iconeUI('busca')}<span>Abrir nota…</span><kbd>Ctrl O</kbd></button>
+        ${botao('paleta', 'Comandos (Ctrl+P)', 'comando')}
+        ${botao('alternar-direita', 'Links, sumário e propriedades', 'painel-dir')}
+      </div>
+      <div class="cd-app">
+        <aside class="cd-lado cd-esq" aria-label="Arquivos, busca e tags">
+          <div class="cd-abas" role="tablist">
+            <button type="button" role="tab" data-aba="arquivos" aria-selected="true">Arquivos</button>
+            <button type="button" role="tab" data-aba="busca" aria-selected="false">Busca</button>
+            <button type="button" role="tab" data-aba="tags" aria-selected="false">Tags</button>
+          </div>
+          <div class="cd-ferr">
+            ${botao('nova-nota', 'Nova nota (Ctrl+N)', 'nota-nova')}
+            ${botao('nova-pasta', 'Nova pasta', 'pasta-nova')}
+            ${botao('novo-desenho', 'Novo desenho', 'desenho')}
+            ${botao('diaria', 'Nota do dia', 'sol')}
+            ${botao('grafo', 'Grafo', 'grafo')}
+            ${botao('recolher', 'Recolher pastas', 'setas')}
+          </div>
+          <div class="cd-painel" data-painel="arquivos"><ul class="cd-arvore" data-arvore role="tree"><li class="vazio">Abrindo o cofre…</li></ul></div>
+          <div class="cd-painel" data-painel="busca" hidden>
+            <input type="search" class="cd-campo-busca" data-busca placeholder="Buscar no cofre (tag:nome para tags)" aria-label="Buscar no cofre">
+            <ul class="cd-lista" data-resultados></ul>
+          </div>
+          <div class="cd-painel" data-painel="tags" hidden><ul class="cd-tags" data-tags></ul></div>
+        </aside>
+
+        <section class="cd-centro" data-centro aria-label="Nota">
+          <div class="cd-barra" data-barra hidden>
+            <nav class="cd-caminho" data-migalha aria-label="Caminho"></nav>
+            <a class="cd-na-trilha" data-na-trilha hidden></a>
+            <span class="cd-estado" data-estado role="status"></span>
+            <div class="cd-modos" data-modos role="group" aria-label="Modo de visualização">
+              <button type="button" data-modo-btn="editar" title="Editar (Ctrl+E alterna)">Editar</button>
+              <button type="button" data-modo-btn="dividir" title="Editar e ler lado a lado">Dividir</button>
+              <button type="button" data-modo-btn="ler" title="Ler">Ler</button>
+            </div>
+            ${botao('mais', 'Mais ações', 'mais', ' data-menu-botao')}
+          </div>
+          <div class="cd-vazio" data-vazio>
+            ${px ? sprite('livro', { escala: 6 }) : ''}
+            <h1 class="titulo-gotico">Caderno</h1>
+            <p>Abra uma nota na lateral, aperte <kbd>Ctrl O</kbd> para procurar pelo nome ou comece uma nova.</p>
+            <div class="foco-botoes">
+              <button type="button" class="btn btn-ouro" data-cmd="nova-nota">${acao('nota-nova', 'Nova nota')}</button>
+              <button type="button" class="btn" data-cmd="novo-desenho">${acao('desenho', 'Novo desenho')}</button>
+              <button type="button" class="btn" data-cmd="diaria">${acao('sol', 'Nota do dia')}</button>
+            </div>
+          </div>
+          <div class="cd-editor" data-editor hidden>
+            <textarea class="cd-fonte" data-fonte spellcheck="true" aria-label="Texto da nota em Markdown"></textarea>
+            <article class="cd-leitura nota" data-leitura aria-label="Nota renderizada"></article>
+          </div>
+          <div class="cd-desenho" data-desenho-area hidden></div>
+          <div class="cd-grafo" data-grafo-area hidden><canvas data-grafo aria-label="Grafo das notas"></canvas><p class="ajuda">Arraste para mover, use a roda do mouse para aproximar, clique numa nota para abrir.</p></div>
+          <div class="cd-imagem" data-imagem-area hidden></div>
+        </section>
+
+        <aside class="cd-lado cd-dir" aria-label="Links, sumário e propriedades">
+          <div class="cd-abas" role="tablist">
+            <button type="button" role="tab" data-aba-dir="links" aria-selected="true">Links</button>
+            <button type="button" role="tab" data-aba-dir="sumario" aria-selected="false">Sumário</button>
+            <button type="button" role="tab" data-aba-dir="props" aria-selected="false">Propriedades</button>
+          </div>
+          <div class="cd-painel" data-painel-dir="links"><h3>Links para esta nota</h3><ul class="cd-lista" data-backlinks><li class="vazio">Abra uma nota.</li></ul><h3>Links que saem</h3><ul class="cd-lista" data-saidas></ul></div>
+          <div class="cd-painel" data-painel-dir="sumario" hidden><ol class="cd-sumario" data-sumario></ol></div>
+          <div class="cd-painel" data-painel-dir="props" hidden><dl class="cd-props" data-props></dl></div>
+        </aside>
+      </div>
+    </div>
+    <div class="cd-modal" data-modal hidden>
+      <div class="cd-modal-caixa" role="dialog" aria-modal="true" aria-label="Busca rápida">
+        <input class="cd-modal-campo" data-modal-campo autocomplete="off" spellcheck="false">
+        <ul class="cd-modal-lista" data-modal-lista role="listbox"></ul>
+        <p class="cd-modal-dica" data-modal-dica></p>
+      </div>
+    </div>
+    <ul class="cd-flutuante" data-menu hidden role="menu"></ul>
+    <ul class="cd-flutuante cd-auto" data-auto hidden role="listbox"></ul>`,
   });
 }

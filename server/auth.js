@@ -114,7 +114,7 @@ export async function autenticar(login, senha) {
   return ok && u ? { id: u.id, usuario: u.usuario, pendente: !!u.confirmacao_pendente } : null;
 }
 
-const RESERVADOS = new Set(['admin', 'ayo', 'ayostd', 'ayo-std', 'root', 'suporte', 'sistema', 'grupo', 'convite', 'conta', 'configuracoes']);
+const RESERVADOS = new Set(['admin', 'ayo', 'ayostd', 'ayo-std', 'std', 'dying', 'stddying', 'std-dying', 'caderno', 'root', 'suporte', 'sistema', 'grupo', 'convite', 'conta', 'configuracoes']);
 export function validarArroba(arroba, { permitirReservado = false } = {}) {
   if (typeof arroba !== 'string' || !/^[a-z0-9_.]{3,24}$/.test(arroba)) {
     return 'O @ deve ter de 3 a 24 letras minúsculas, números, ponto ou sublinhado.';

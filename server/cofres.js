@@ -17,7 +17,7 @@ export class ErroHttp extends Error {
 let TRILHAS = [];
 const expandir = (p) => path.resolve(String(p).replace(/^~(?=$|\/)/, os.homedir()));
 
-// As pastas dos cofres às vezes mudam de lugar (para dentro e para fora do Ayo Sketchbook).
+// As pastas dos cofres às vezes mudam de lugar (para dentro e para fora da pasta ~/Documents/Ayo Sketchbook).
 // "pasta" é o lugar principal e "alternativas" os outros possíveis: vale a primeira que existir,
 // conferida de novo a cada poucos segundos, sem precisar reiniciar o serviço.
 function comPastaViva(bruta) {
@@ -164,6 +164,7 @@ export function analisarNota(texto) {
 
 // Cache por arquivo: só relê do disco quando mtime ou tamanho mudam (o Obsidian pode editar a qualquer hora).
 const cache = new Map();
+export const esquecerNota = (abs) => cache.delete(abs);
 
 export async function lerNota(t, rel) {
   const abs = await caminhoSeguro(t, rel);
@@ -197,7 +198,8 @@ export async function listarNotas(t) {
 const travas = new Map();
 
 // Uma escrita por arquivo de cada vez; a fila nunca trava se uma escrita falhar.
-function comTrava(chave, fn) {
+// O Caderno usa a mesma fila: a nota de uma trilha pode ser gravada pelos dois lados ao mesmo tempo.
+export function comTrava(chave, fn) {
   const anterior = travas.get(chave) || Promise.resolve();
   const atual = anterior.then(fn);
   const guarda = atual.catch(() => {});

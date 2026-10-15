@@ -3,7 +3,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { config } from './config.js';
 
-export const db = new DatabaseSync(path.join(config.dataDir, 'ayo-std.sqlite'));
+export const db = new DatabaseSync(path.join(config.dataDir, 'std-dying.sqlite'));
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
 
 const MIGRACOES = [
@@ -301,7 +301,7 @@ export function backupDoBanco() {
   const dir = path.join(config.dataDir, 'backups', 'banco');
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const hoje = new Date().toLocaleDateString('sv-SE');
-  const destino = path.join(dir, `ayo-std-${hoje}.sqlite`);
+  const destino = path.join(dir, `std-dying-${hoje}.sqlite`);
   if (!fs.existsSync(destino)) {
     db.exec(`VACUUM INTO '${destino.replace(/'/g, "''")}'`);
   }

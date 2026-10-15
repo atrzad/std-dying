@@ -12,10 +12,17 @@ export const config = {
   porta: Number(env.PORTA || 3300),
   // Só a própria máquina acessa por padrão. Para abrir na rede (ex.: Tailscale), mude HOST e HOSTS_EXTRAS.
   host: env.HOST || '127.0.0.1',
-  dataDir: path.resolve(expandir(env.DATA_DIR || '~/.local/share/ayo-std')),
+  dataDir: path.resolve(expandir(env.DATA_DIR || '~/.local/share/std-dying')),
   trilhasArquivo: path.resolve(raiz, expandir(env.TRILHAS || 'config/trilhas.json')),
+  // Cofre do Caderno do dono: a pasta que o Obsidian abre (as das outras contas ficam em DATA_DIR/cofres/u<id>).
+  cofreDono: env.COFRE_DONO ? path.resolve(expandir(env.COFRE_DONO)) : null,
+  // Endereços antigos, aceitos só para mandar ao endereço novo (URL_PUBLICA): os do Ayo Std mantêm o caminho,
+  // os do Ayo Sketchbook levam ao mesmo arquivo no Caderno.
+  enderecosAntigos: new Set(lista(env.ENDERECOS_ANTIGOS)),
+  enderecosAntigosCaderno: new Set(lista(env.ENDERECOS_ANTIGOS_CADERNO)),
   // Cabeçalho Host aceito (bloqueia DNS rebinding contra o servidor local).
-  hosts: new Set(['localhost', '127.0.0.1', '[::1]', os.hostname().toLowerCase(), ...lista(env.HOSTS_EXTRAS)]),
+  hosts: new Set(['localhost', '127.0.0.1', '[::1]', os.hostname().toLowerCase(), ...lista(env.HOSTS_EXTRAS),
+    ...lista(env.ENDERECOS_ANTIGOS), ...lista(env.ENDERECOS_ANTIGOS_CADERNO)]),
   sessaoDias: Number(env.SESSAO_DIAS || 30),
   trustProxy: env.TRUST_PROXY === 'true' ? 'loopback' : false,
   cookieSeguro: env.COOKIE_SEGURO === 'true',

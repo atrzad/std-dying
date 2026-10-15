@@ -114,7 +114,7 @@ function notaGuia() {
     '## Regras',
     '',
     '- Cada módulo começa pela **Revisão rápida**: o mínimo para revisar na véspera de uma entrevista. Os tópicos aprofundam.',
-    '- Marque as tarefas aqui no Obsidian ou no Ayo Std. A nota é a fonte da verdade.',
+    '- Marque as tarefas aqui no Obsidian ou no std(dying). A nota é a fonte da verdade.',
     '- Todo projeto vai para o GitHub **glwydson** (o seu perfil profissional), com README e CI.',
     '- Use o Ayo Música como laboratório: casos de teste, automação, evidências e causa raiz.',
     '- Quando o assunto existe na Trilha Dev, o módulo aponta para lá. Aqui fica a versão para entrevista; a Trilha Dev aprofunda.',
