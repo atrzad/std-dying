@@ -76,6 +76,11 @@ body[class*="paleta-"], body[class*="paleta-"] .t-inicio { --tc: var(--brasa); -
 /* ---------- amostras na página de configurações (funcionam nos dois temas) ---------- */
 .paleta-pixel { --bg: #0d0b0a; --painel-3: #33291f; --ouro: #c9a45c; --brasa: #e2722b; }
 .paleta-normal { --bg: #f6f5f2; --painel-3: #dcd9d2; --ouro: #2f6fd6; --brasa: #1c1c1f; }
+.paleta-wikipedia, .paleta-wikipedia-claro { --bg: #fff; --painel-3: #eaecf0; --ouro: #36c; --brasa: #202122; }
+.paleta-wikipedia-escuro { --bg: #101418; --painel-3: #27292d; --ouro: #88a3e8; --brasa: #eaecf0; }
+@media (prefers-color-scheme: dark) {
+  .paleta-wikipedia { --bg: #101418; --painel-3: #27292d; --ouro: #88a3e8; --brasa: #eaecf0; }
+}
 .tema-cores { font-style: normal; display: inline-flex; vertical-align: middle; margin-right: 8px; box-shadow: 0 0 0 2px var(--sombra, #000); }
 .tema-cores i { display: block; width: 10px; height: 14px; }
 .tema-cores i:nth-child(1) { background: var(--bg); }

@@ -9,6 +9,9 @@ export const TEMAS = [
   { id: 'profundezas', base: 'pixel', nome: 'Profundezas', descricao: 'Mar escuro e a lanterna do barco.' },
   { id: 'unidade', base: 'pixel', nome: 'Unidade 01', descricao: 'Roxo e verde de máquina, laranja de alerta.' },
   { id: 'normal', base: 'normal', nome: 'Normal', descricao: 'Sem pixel art, claro ou escuro conforme o aparelho.' },
+  { id: 'wikipedia', base: 'normal', wikipedia: 'auto', nome: 'Wikipédia · automático', descricao: 'Visual de enciclopédia, com títulos serifados e links azuis. Acompanha o modo claro ou escuro do aparelho.' },
+  { id: 'wikipedia-claro', base: 'normal', wikipedia: 'light', nome: 'Wikipédia · claro', descricao: 'Visual de enciclopédia com fundo branco, títulos serifados e links azuis, sempre no modo claro.' },
+  { id: 'wikipedia-escuro', base: 'normal', wikipedia: 'dark', nome: 'Wikipédia · escuro', descricao: 'Visual de enciclopédia com fundo carvão, títulos serifados e links azul-claros, sempre no modo escuro.' },
 ];
 
 const PORID = new Map(TEMAS.map((t) => [t.id, t]));

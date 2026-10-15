@@ -2,6 +2,7 @@
 (() => {
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+  const rotuloBotao = (botao) => $('[data-rotulo]', botao) || botao;
   const reduzir = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const pixel = document.body.classList.contains('tema-pixel');
 
@@ -198,10 +199,10 @@
     const b = e.target.closest('[data-acao-url]');
     if (!b) return;
     if (b.hasAttribute('data-confirmar') && !b.classList.contains('confirmar')) {
-      b.dataset.textoOriginal = b.textContent;
+      b.dataset.textoOriginal = rotuloBotao(b).textContent;
       b.classList.add('confirmar');
-      b.textContent = 'Confirmar';
-      setTimeout(() => { if (b.classList.contains('confirmar')) { b.classList.remove('confirmar'); b.textContent = b.dataset.textoOriginal; } }, 5000);
+      rotuloBotao(b).textContent = 'Confirmar';
+      setTimeout(() => { if (b.classList.contains('confirmar')) { b.classList.remove('confirmar'); rotuloBotao(b).textContent = b.dataset.textoOriginal; } }, 5000);
       return;
     }
     b.disabled = true;
@@ -231,10 +232,10 @@
   // Ações destrutivas pedem um segundo clique (a página não usa confirm()).
   function segundoClique(botao) {
     if (botao.classList.contains('confirmar')) return true;
-    $$('.btn-x.confirmar').forEach((x) => { x.classList.remove('confirmar'); x.textContent = x.dataset.textoOriginal || 'Remover'; });
-    botao.dataset.textoOriginal = botao.textContent;
+    $$('.btn-x.confirmar').forEach((x) => { x.classList.remove('confirmar'); rotuloBotao(x).textContent = x.dataset.textoOriginal || 'Remover'; });
+    botao.dataset.textoOriginal = rotuloBotao(botao).textContent;
     botao.classList.add('confirmar');
-    botao.textContent = 'Confirmar';
+    rotuloBotao(botao).textContent = 'Confirmar';
     return false;
   }
 
@@ -401,6 +402,67 @@
 
   const pilula = $('.foco-fixo[data-foco-id]');
   if (pilula) {
+    const expandir = $('[data-foco-expandir]', pilula);
+    const controles = $('#foco-controles', pilula);
+    const colunaFoco = $('.coluna');
+    const topoMovel = $('.topo-movel');
+    let manterAberto = false;
+    const mostrarControles = (sim) => {
+      controles.hidden = !sim;
+      expandir.setAttribute('aria-expanded', String(sim));
+      expandir.setAttribute('aria-label', `${sim ? 'Ocultar' : 'Mostrar'} controles do pomodoro`);
+    };
+    expandir.hidden = false;
+    mostrarControles(false);
+    expandir.addEventListener('click', () => {
+      manterAberto = controles.hidden;
+      mostrarControles(manterAberto);
+    });
+    pilula.addEventListener('pointerenter', (e) => {
+      if (e.pointerType === 'mouse') mostrarControles(true);
+    });
+    pilula.addEventListener('pointerleave', () => {
+      if (!manterAberto && !pilula.contains(document.activeElement)) mostrarControles(false);
+    });
+    pilula.addEventListener('focusout', () => {
+      queueMicrotask(() => {
+        if (!manterAberto && !pilula.contains(document.activeElement) && !pilula.matches(':hover')) mostrarControles(false);
+      });
+    });
+    pilula.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || controles.hidden) return;
+      e.preventDefault();
+      manterAberto = false;
+      expandir.focus();
+      mostrarControles(false);
+    });
+
+    // A posição fixa não altera a altura da página nem faz a leitura saltar.
+    // A margem entre os limiares evita oscilações perto do ponto de troca.
+    const medirFoco = () => {
+      const esquerda = colunaFoco?.getBoundingClientRect().left || 0;
+      const topo = topoMovel?.getBoundingClientRect().height || 0;
+      pilula.style.setProperty('--foco-coluna-esquerda', `${esquerda}px`);
+      document.documentElement.style.setProperty('--pomodoro-topo', `${topo}px`);
+      document.documentElement.style.setProperty('--pomodoro-altura', `${pilula.classList.contains('foco-ancorado') ? pilula.offsetHeight : 0}px`);
+    };
+    const posicionarFoco = () => {
+      const ancorado = pilula.classList.contains('foco-ancorado');
+      pilula.classList.toggle('foco-ancorado', window.scrollY > (ancorado ? 48 : 96));
+      medirFoco();
+    };
+    let quadroFoco = 0;
+    const agendarFoco = () => {
+      if (quadroFoco) return;
+      quadroFoco = requestAnimationFrame(() => { quadroFoco = 0; posicionarFoco(); });
+    };
+    addEventListener('scroll', agendarFoco, { passive: true });
+    addEventListener('resize', agendarFoco);
+    addEventListener('pageshow', agendarFoco);
+    const observarFoco = new ResizeObserver(agendarFoco);
+    [pilula, colunaFoco, topoMovel].filter(Boolean).forEach((el) => observarFoco.observe(el));
+    posicionarFoco();
+
     // acabou de começar: a barra entra com animação
     try { if (sessionStorage.getItem('ayo-foco-entrou')) { sessionStorage.removeItem('ayo-foco-entrou'); pilula.classList.add('entrando'); } } catch {}
     const id = Number(pilula.dataset.focoId);

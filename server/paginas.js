@@ -1,9 +1,10 @@
 import { esc, caminhoURL } from './markdown.js';
-import { sprite, EMBLEMAS } from './sprites.js';
+import { sprite } from './sprites.js';
+import { iconeUI, iconeTrilha, acao } from './icones.js';
 import { dataBR, diasEntre, hojeISO, somarDias, nomeCargo } from './resumo.js';
 import { formatarDuracao } from './foco.js';
 import { CITACOES, citacaoDoDia } from './citacoes.js';
-import { TEMAS } from './temas.js';
+import { TEMAS, temaPorId } from './temas.js';
 
 // O caderno saiu do Ayo Std: as anotações vivem no Ayo Sketchbook (site próprio, mesma conta).
 const SKETCHBOOK = (process.env.SKETCHBOOK_URL || 'http://localhost:3400').replace(/\/$/, '');
@@ -35,11 +36,11 @@ function medidor(pct, { rotulo = '', classe = '', marca = '' } = {}) {
     rotulo ? ` aria-label="${esc(rotulo)}"` : ''}><i data-pct="${p.toFixed(1)}"${marca}></i></span>`;
 }
 
-const emblema = (slug, escala) => sprite(EMBLEMAS[slug] || 'lagrima', { escala });
+const emblema = (slug) => iconeUI(iconeTrilha(slug));
 
 // ---------- casca ----------
 
-// Barra do pomodoro em andamento: logo abaixo do cabeçalho, presa no topo ao rolar, em todas as páginas.
+// O mesmo pomodoro flutua no início da página e se fixa no cabeçalho ao rolar.
 function barraFoco(foco, px, trilhas) {
   if (!foco) return '';
   const pausado = foco.estado === 'pausado';
@@ -56,27 +57,22 @@ function barraFoco(foco, px, trilhas) {
         <span class="foco-fixo-assunto">${esc(foco.assunto || (foco.tipo === 'pausa' ? 'Descanso' : 'Sem assunto'))}</span>
       </a>
       <b class="foco-fixo-relogio" data-foco-relogio>${mmss(foco.restanteMs)}</b>
-      <span class="foco-fixo-acoes">
+      <button type="button" class="btn foco-expandir" data-foco-expandir aria-expanded="true" aria-controls="foco-controles" aria-label="Ocultar controles do pomodoro" hidden>${iconeUI('configuracoes')}</button>
+      <span class="foco-fixo-acoes" id="foco-controles">
         ${pausado
-          ? `<button type="button" class="btn btn-ouro" data-foco-acao="retomar" data-id="${foco.id}">Retomar</button>`
-          : `<button type="button" class="btn" data-foco-acao="pausar" data-id="${foco.id}">Pausar</button>`}
-        <button type="button" class="btn" data-foco-acao="concluir" data-id="${foco.id}">Concluir</button>
-        <a class="btn" href="${linkAnotar(foco.assunto || 'Sessão de foco', foco.trilha)}">Anotar</a>
-        <button type="button" class="btn-x" data-foco-acao="cancelar" data-id="${foco.id}">Abandonar</button>
+          ? `<button type="button" class="btn btn-ouro" data-foco-acao="retomar" data-id="${foco.id}">${acao('iniciar', 'Retomar')}</button>`
+          : `<button type="button" class="btn" data-foco-acao="pausar" data-id="${foco.id}">${acao('pausar', 'Pausar')}</button>`}
+        <button type="button" class="btn" data-foco-acao="concluir" data-id="${foco.id}">${acao('concluir', 'Concluir')}</button>
+        <a class="btn" href="${linkAnotar(foco.assunto || 'Sessão de foco', foco.trilha)}">${acao('editar', 'Anotar')}</a>
+        <button type="button" class="btn-x" data-foco-acao="cancelar" data-id="${foco.id}">${acao('fechar', 'Abandonar')}</button>
       </span>
     </div>
     <span class="foco-fixo-trilho"><i data-foco-barra data-pct="${pct.toFixed(1)}"></i></span>
   </aside>`;
 }
 
-// Ícone de cada destino: sprite no tema pixel; no tema normal, uma letra (aparece com a barra recolhida).
-const icone = (px, spriteHtml, letra) => (px ? spriteHtml : `<i class="nav-letra" aria-hidden="true">${esc(letra)}</i>`);
-// "Manaus Prev" → "MP", "BB" → "BB", "Carreira" → "C".
-const sigla = (nome) => {
-  const palavras = String(nome || '?').trim().split(/\s+/);
-  if (palavras.length === 1) return /^[A-Z]{2,3}$/.test(palavras[0]) ? palavras[0] : palavras[0][0].toUpperCase();
-  return palavras.slice(0, 2).map((p) => p[0]).join('').toUpperCase();
-};
+// Todos os temas usam os mesmos símbolos, com as cores da própria paleta.
+const icone = (nome) => `<span class="nav-icone">${iconeUI(nome)}</span>`;
 
 // Navegação: barra lateral fixa no computador; no celular, gaveta aberta pelo botão ☰ do cabeçalho.
 // Funciona sem JavaScript: o ☰ é um link para #navegacao e a gaveta abre por :target.
@@ -97,27 +93,27 @@ function navegacao({ px, ativo, usuario, trilhas, almas, notaAtual }) {
         </ul>` : '';
     return `
       <li class="nav-trilha t-${t.slug}${aberta ? ' aberta' : ''}">
-        ${item(t.slug, `/t/${t.slug}`, t.nome, icone(px, emblema(t.slug, 2), sigla(t.curto || t.nome)), pct == null ? '' : `<b class="nav-pct">${pctTxt(pct)}</b>`)}
+        ${item(t.slug, `/t/${t.slug}`, t.nome, icone(iconeTrilha(t.slug)), pct == null ? '' : `<b class="nav-pct">${pctTxt(pct)}</b>`)}
         ${pct == null ? '' : medidor(pct, { rotulo: `Progresso de ${t.nome}`, classe: 'tc nav-medidor' })}${notas}
       </li>`;
   }).join('');
   const ferramentas = [
-    item('foco', '/foco', 'Foco', icone(px, sprite('ampulheta', { escala: 2 }), 'F')),
-    item('espaco', '/espaco', 'Meu espaço', icone(px, sprite('picareta', { escala: 2 }), 'E')),
-    `<a class="nav-item t-caderno" href="${SKETCHBOOK}" title="Abrir o Ayo Sketchbook (notas e caneta)">${icone(px, sprite('livro', { escala: 2 }), 'S')}<span class="nav-rot">Sketchbook ↗</span></a>`,
-    item('grupo', '/grupo', 'Grupo', icone(px, sprite('fogueira', { escala: 2 }), 'G')),
+    item('foco', '/foco', 'Foco', icone('foco')),
+    item('espaco', '/espaco', 'Meu espaço', icone('pasta')),
+    `<a class="nav-item t-caderno" href="${SKETCHBOOK}" title="Abrir o Ayo Sketchbook (notas e caneta)">${icone('caderno')}<span class="nav-rot">Sketchbook ↗</span></a>`,
+    item('grupo', '/grupo', 'Grupo', icone('grupo')),
   ].map((a) => `<li>${a}</li>`).join('');
   return `
   <nav class="navlat" id="navegacao" aria-label="Navegação">
     <div class="navlat-topo">
       ${px ? `<div class="brasas" aria-hidden="true">${'<i></i>'.repeat(10)}</div>` : ''}
       <a class="marca" href="/" aria-label="Ayo Std, início">${px ? sprite('fogueira', { escala: 3 }) : ''}<span class="marca-txt"><span class="marca-nome">Ayo</span><span class="marca-std">Std</span></span></a>
-      <button type="button" class="navlat-recolher" data-nav-recolher aria-pressed="false" title="Recolher a barra lateral"><span aria-hidden="true">«</span><span class="visivel-leitor">Recolher a barra lateral</span></button>
-      <a class="navlat-fechar" href="#" data-nav-fechar title="Fechar o menu"><span aria-hidden="true">✕</span><span class="visivel-leitor">Fechar o menu</span></a>
+      <button type="button" class="navlat-recolher" data-nav-recolher aria-pressed="false" title="Recolher a barra lateral">${iconeUI('recolher')}<span class="visivel-leitor">Recolher a barra lateral</span></button>
+      <a class="navlat-fechar" href="#" data-nav-fechar title="Fechar o menu">${iconeUI('fechar')}<span class="visivel-leitor">Fechar o menu</span></a>
     </div>
     <div class="navlat-rolagem">
       <ul class="nav-lista">
-        <li>${item('inicio', '/', px ? 'Fogueira' : 'Início', icone(px, sprite('fogueira', { escala: 2 }), 'I'))}</li>
+        <li>${item('inicio', '/', px ? 'Fogueira' : 'Início', icone('inicio'))}</li>
       </ul>
       ${cofres.length ? `<p class="nav-grupo">Caminhos</p>
       <ul class="nav-lista">${caminhos}
@@ -127,8 +123,8 @@ function navegacao({ px, ativo, usuario, trilhas, almas, notaAtual }) {
     </div>
     <div class="navlat-pe">
       ${px && almas != null ? `<span class="almas" title="Lágrimas: tarefas concluídas">${sprite('lagrima', { escala: 2 })}<b>${fmt.format(almas)}</b></span>` : ''}
-      <a class="conta-link${ativo === 'conta' ? ' ativa' : ''}" href="/configuracoes" title="Configurações">@${esc(usuario.arroba || usuario.usuario)}</a>
-      <button type="button" class="btn btn-sair" data-sair>Sair</button>
+      <a class="conta-link${ativo === 'conta' ? ' ativa' : ''}" href="/configuracoes" title="Configurações">${iconeUI('configuracoes')}@${esc(usuario.arroba || usuario.usuario)}</a>
+      <button type="button" class="btn btn-sair" data-sair>${acao('sair', 'Sair')}</button>
     </div>
   </nav>
   <a class="nav-fundo" href="#" data-nav-fechar tabindex="-1" aria-hidden="true"></a>`;
@@ -136,6 +132,8 @@ function navegacao({ px, ativo, usuario, trilhas, almas, notaAtual }) {
 
 export function layout({ titulo, ativo = 'inicio', usuario = null, corpo, classe = '', trilhas = [], almas = null, foco = null, scripts = [], notaAtual = null }) {
   const px = ehPixel(usuario);
+  const wiki = temaPorId(usuario?.temaId || usuario?.tema).wikipedia;
+  const esquema = px ? 'dark' : wiki && wiki !== 'auto' ? wiki : 'light dark';
   const topoMovel = usuario ? `
     <header class="topo-movel">
       ${px ? `<div class="brasas" aria-hidden="true">${'<i></i>'.repeat(8)}</div>` : ''}
@@ -151,19 +149,22 @@ ${corpo}
 </main>
 ${rodape}`;
   return `<!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR"${wiki ? ` data-wikipedia="${wiki}"` : ''}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-${px ? '<meta name="color-scheme" content="dark">' : '<meta name="color-scheme" content="light dark">'}
+<meta name="color-scheme" content="${esquema}">
 <title>${esc(titulo ? `${titulo} · Ayo Std` : 'Ayo Std')}</title>
 <link rel="icon" href="/icone.svg" type="image/svg+xml">
 ${px ? '<link rel="stylesheet" href="/css/fontes.css">\n<link rel="stylesheet" href="/css/ayo.css">' : '<link rel="stylesheet" href="/css/normal.css">'}
 <link rel="stylesheet" href="/css/temas.css">
+${wiki ? '<link rel="stylesheet" href="/css/wikipedia.css">' : ''}
+<link rel="stylesheet" href="/css/icones.css">
+${usuario && foco ? '<link rel="stylesheet" href="/css/pomodoro.css">' : ''}
 <script src="/js/ayo.js" defer></script>
 ${scripts.map((src) => `<script src="${src}" defer></script>`).join('\n')}
 </head>
-<body class="${px ? 'tema-pixel' : 'tema-normal'}${px && usuario?.temaId && usuario.temaId !== 'pixel' ? ` paleta-${esc(usuario.temaId)}` : ''}${usuario ? ' com-nav' : ''}${usuario && foco ? ' com-foco' : ''} ${esc(classe)}">
+<body class="${px ? 'tema-pixel' : 'tema-normal'}${wiki ? ' tema-wikipedia' : ''}${px && usuario?.temaId && usuario.temaId !== 'pixel' ? ` paleta-${esc(usuario.temaId)}` : ''}${usuario ? ' com-nav' : ''}${usuario && foco ? ' com-foco' : ''} ${esc(classe)}">
 <a class="pular" href="#conteudo">Pular para o conteúdo</a>
 ${usuario ? `<div class="casca">
 ${navegacao({ px, ativo, usuario, trilhas, almas, notaAtual })}
@@ -199,7 +200,7 @@ export function paginaEntrar({ primeira = false, local = true, voltar = '' }) {
       ${primeira ? `<label for="confirmacao">Repita a senha</label>
       <input id="confirmacao" name="confirmacao" type="password" autocomplete="new-password" required maxlength="200">` : ''}
       <p class="erro-form" data-erro hidden></p>
-      <button class="btn btn-ouro" type="submit">${primeira ? 'Acender a fogueira' : 'Entrar'}</button>
+      <button class="btn btn-ouro" type="submit">${acao('entrar', primeira ? 'Acender a fogueira' : 'Entrar')}</button>
       ${primeira ? '' : `<button type="button" class="btn-x" data-reenviar hidden>Reenviar e-mail de confirmação</button>
       <p class="ajuda">Ainda não tem conta? As contas são criadas por convite: <a href="/convite">tenho um código</a>.</p>`}
     </form>`;
@@ -255,7 +256,7 @@ function blocoCitacao() {
     <span class="citacao-tipo" data-citacao-tipo>${esc(c.tipo)}</span>
     <blockquote data-citacao-texto>“${esc(c.texto)}”</blockquote>
     <figcaption><b data-citacao-autor>${esc(c.autor)}</b> · <cite data-citacao-fonte>${esc(c.fonte)}</cite></figcaption>
-    <button type="button" class="btn-x" data-citacao-outra>Outra reflexão</button>
+    <button type="button" class="btn-x" data-citacao-outra>${acao('atualizar', 'Outra reflexão')}</button>
     <script type="application/json" id="citacoes-dados">${JSON.stringify(CITACOES).replace(/</g, '\\u003c')}</script>
   </figure>`;
 }
@@ -275,7 +276,7 @@ export function paginaInicio({ usuario, cards, eventos, trilhas, almas, foco, to
 
   const cartoes = cards.map((c) => `
     <a class="cartao caixa ${c.espaco ? `c-${esc(c.cor)}` : `t-${c.slug}`}" href="${c.href || `/t/${c.slug}`}">
-      <span class="cartao-topo">${px ? (c.espaco ? sprite('picareta', { escala: 3 }) : emblema(c.slug, 3)) : ''}<span class="cartao-nome">${esc(c.espaco ? 'Meu espaço' : (px ? c.nome : 'Trilha'))}</span></span>
+      <span class="cartao-topo">${c.espaco ? iconeUI('pasta') : emblema(c.slug)}<span class="cartao-nome">${esc(c.espaco ? 'Meu espaço' : (px ? c.nome : 'Trilha'))}</span></span>
       <span class="mundo">${esc(px ? c.mundo : c.nome)}</span>
       <span class="cartao-linha">${esc(c.linhaPrazo)}</span>
       <span class="barra-rot"><span>Progresso das notas</span><b>${pctTxt(c.pct)}</b></span>
@@ -425,13 +426,13 @@ function blocoRegistro(t, estudos, registros) {
       </div>
       <datalist id="materias-${t.slug}">${materias.map((m) => `<option value="${esc(m)}">`).join('')}</datalist>
       <p class="erro-form" data-erro hidden></p>
-      <button class="btn btn-ouro" type="submit">Registrar</button>
+      <button class="btn btn-ouro" type="submit">${acao('adicionar', 'Registrar')}</button>
       <p class="ajuda">Para redação, use a matéria “Redação”: questões = nota máxima, acertos = nota.</p>
     </form>
     ${ultimos.length ? `<h4>Últimos registros</h4><ul class="ultimos">${ultimos.map((r) => `
       <li><span>${dataBR(r.data, false)} · ${esc(r.materia)}${r.topico ? ` <small>${esc(r.topico)}</small>` : ''}</span>
         <b>${fmt.format(r.acertos)}/${fmt.format(r.questoes)}</b>
-        <button type="button" class="btn-x" data-remover="${r.linha}" data-hash="${r.hash}" data-trilha="${t.slug}" aria-label="Remover registro de ${esc(r.materia)} em ${dataBR(r.data)}">Remover</button></li>`).join('')}</ul>` : ''}
+        <button type="button" class="btn-x" data-remover="${r.linha}" data-hash="${r.hash}" data-trilha="${t.slug}" aria-label="Remover registro de ${esc(r.materia)} em ${dataBR(r.data)}">${acao('excluir', 'Remover')}</button></li>`).join('')}</ul>` : ''}
   </section>`;
 }
 
@@ -459,7 +460,7 @@ function blocoFocoTrilha(t, tot) {
       <div class="tile"><span class="tile-rot">Hoje</span><span class="tile-val">${tot?.hojeN ? formatarDuracao(tot.hojeS) : '0 min'}</span><span class="tile-sub">${tot?.hojeN || 0} ${tot?.hojeN === 1 ? 'sessão' : 'sessões'}</span></div>
       <div class="tile"><span class="tile-rot">Nesta semana</span><span class="tile-val">${tot?.semanaN ? formatarDuracao(tot.semanaS) : '0 min'}</span><span class="tile-sub">${tot?.semanaN || 0} ${tot?.semanaN === 1 ? 'sessão' : 'sessões'}</span></div>
     </div>
-    <a class="btn btn-ouro" href="/foco?trilha=${t.slug}">Começar um pomodoro aqui</a>
+    <a class="btn btn-ouro" href="/foco?trilha=${t.slug}">${acao('iniciar', 'Começar um pomodoro aqui')}</a>
   </section>`;
 }
 
@@ -529,7 +530,7 @@ export function paginaTrilha({ usuario, trilhas, almas, foco, t, info, notas, ar
         <h2 class="titulo-secao">Anotações</h2>
         <div class="caixa anotacoes-trilha">
           <p>As anotações agora ficam no <b>Ayo Sketchbook</b>: notas em Markdown, links entre notas e desenho à caneta, com a mesma conta.</p>
-          <div class="foco-botoes"><a class="btn btn-ouro" href="${linkAnotar(t.nome, t.slug)}">Nova anotação desta trilha</a><a class="btn" href="${SKETCHBOOK}">Abrir o Sketchbook ↗</a></div>
+          <div class="foco-botoes"><a class="btn btn-ouro" href="${linkAnotar(t.nome, t.slug)}">${acao('editar', 'Nova anotação desta trilha')}</a><a class="btn" href="${SKETCHBOOK}">${acao('link', 'Abrir o Sketchbook ↗')}</a></div>
         </div>
         ${evs ? `<h2 class="titulo-secao">Últimas ações</h2>${evs}` : ''}
       </section>
@@ -570,9 +571,9 @@ export function paginaNota({ usuario, trilhas, almas, foco, t, nota, html, toc }
         ${nota.total ? `<span class="barra-rot"><span><b data-feitas>${nota.feitas}</b> de <b data-total>${nota.total}</b> tarefas</span><b data-pct-txt>${pctTxt(pct)}</b></span>
         ${medidor(pct, { rotulo: 'Progresso da nota', classe: 'tc', marca: ' data-nota-medidor' })}` : ''}
         <div class="nota-botoes">
-          <a class="btn" href="/foco?trilha=${t.slug}&amp;assunto=${encodeURIComponent(nota.tituloCurto)}">Focar nesta nota</a>
-          <a class="btn" href="${linkAnotar(nota.tituloCurto, t.slug)}">Anotar</a>
-          ${px ? `<a class="btn" href="obsidian://open?path=${encodeURIComponent(nota.abs)}">Abrir no Obsidian</a>` : ''}
+          <a class="btn" href="/foco?trilha=${t.slug}&amp;assunto=${encodeURIComponent(nota.tituloCurto)}">${acao('foco', 'Focar nesta nota')}</a>
+          <a class="btn" href="${linkAnotar(nota.tituloCurto, t.slug)}">${acao('editar', 'Anotar')}</a>
+          ${px ? `<a class="btn" href="obsidian://open?path=${encodeURIComponent(nota.abs)}">${acao('link', 'Abrir no Obsidian')}</a>` : ''}
         </div>
       </div>
     </div>
@@ -607,10 +608,10 @@ export function paginaFoco({ usuario, trilhas, almas, foco, totais, recentes, as
       ${medidor((100 * foco.decorridoMs) / (foco.duracao_s * 1000), { rotulo: 'Tempo decorrido', classe: 'tc grande', marca: ' data-foco-barra' })}
       <div class="foco-botoes">
         ${foco.estado === 'rodando'
-          ? `<button type="button" class="btn" data-foco-acao="pausar" data-id="${foco.id}">Pausar</button>`
-          : `<button type="button" class="btn btn-ouro" data-foco-acao="retomar" data-id="${foco.id}">Retomar</button>`}
-        <button type="button" class="btn" data-foco-acao="concluir" data-id="${foco.id}">Concluir agora</button>
-        <button type="button" class="btn-x" data-foco-acao="cancelar" data-id="${foco.id}">Abandonar</button>
+          ? `<button type="button" class="btn" data-foco-acao="pausar" data-id="${foco.id}">${acao('pausar', 'Pausar')}</button>`
+          : `<button type="button" class="btn btn-ouro" data-foco-acao="retomar" data-id="${foco.id}">${acao('iniciar', 'Retomar')}</button>`}
+        <button type="button" class="btn" data-foco-acao="concluir" data-id="${foco.id}">${acao('concluir', 'Concluir agora')}</button>
+        <button type="button" class="btn-x" data-foco-acao="cancelar" data-id="${foco.id}">${acao('fechar', 'Abandonar')}</button>
       </div>
       <p class="ajuda">Pode trocar de página ou fechar o navegador: o tempo continua contando no servidor e a sessão é registrada quando acabar.</p>
     </div>` : `
@@ -627,7 +628,7 @@ export function paginaFoco({ usuario, trilhas, almas, foco, totais, recentes, as
       ${Object.entries(assuntos).map(([slug, lista]) => `<datalist id="assuntos-${esc(slug)}">${lista.map((a) => `<option value="${esc(a)}">`).join('')}</datalist>`).join('')}
       <p class="erro-form" data-erro hidden></p>
       <div class="foco-botoes">
-        <button class="btn btn-ouro" type="submit">${px ? 'Acender a chama' : 'Começar'}</button>
+        <button class="btn btn-ouro" type="submit">${acao('iniciar', px ? 'Acender a chama' : 'Começar')}</button>
         <label class="som"><input type="checkbox" id="foco-som" checked> Som ao terminar</label>
       </div>
     </form>`;
@@ -649,7 +650,7 @@ export function paginaFoco({ usuario, trilhas, almas, foco, totais, recentes, as
     return `<li><span class="ev-trilha t-${esc(s.trilha)}">${esc(curtoTrilha(s.trilha))}</span>
       <span class="ev-txt">${esc(s.assunto || 'Sem assunto')} <small>${s.tipo === 'pausa' ? 'pausa' : 'foco'} de ${formatarDuracao(s.foco_s || 0)}${estado}</small></span>
       <time>${quando}</time>
-      <button type="button" class="btn-x" data-foco-remover="${s.id}" aria-label="Remover sessão de ${esc(s.assunto || 'sem assunto')}">Remover</button></li>`;
+      <button type="button" class="btn-x" data-foco-remover="${s.id}" aria-label="Remover sessão de ${esc(s.assunto || 'sem assunto')}">${acao('excluir', 'Remover')}</button></li>`;
   }).join('') : '<li class="vazio">Nenhuma sessão ainda. A primeira aparece aqui assim que terminar.</li>';
 
   return layout({
@@ -694,10 +695,10 @@ export function paginaFoco({ usuario, trilhas, almas, foco, totais, recentes, as
               <label class="largo">Assunto<input name="assunto" maxlength="100" list="assuntos-${esc(trilhaInicial)}"></label>
             </div>
             <p class="erro-form" data-erro hidden></p>
-            <button class="btn btn-ouro" type="submit">Registrar sessão</button>
+            <button class="btn btn-ouro" type="submit">${acao('adicionar', 'Registrar sessão')}</button>
           </form>
         </details>
-        <a class="btn" href="/foco/exportar.csv">Exportar sessões (CSV)</a>
+        <a class="btn" href="/foco/exportar.csv">${acao('baixar', 'Exportar sessões (CSV)')}</a>
       </div>
     </section>`,
   });
@@ -738,7 +739,7 @@ export function paginaCaderno({ usuario, trilhas, almas, foco, anotacoes, filtro
       <form class="caderno-filtros" method="get" action="/caderno">
         <label>Trilha<select name="trilha"><option value="">Todas</option>${trilhas.map((t) => `<option value="${t.slug}"${t.slug === filtroTrilha ? ' selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></label>
         <label class="largo">Buscar<input name="q" value="${esc(busca)}" placeholder="Título, assunto ou texto" maxlength="80"></label>
-        <button class="btn" type="submit">Filtrar</button>
+        <button class="btn" type="submit">${acao('filtrar', 'Filtrar')}</button>
       </form>
       <div class="caderno-grade">${cartoes}</div>
     </section>`,
@@ -882,7 +883,7 @@ export function paginaGrupo({ usuario, trilhas, almas, foco, membro, membros = [
         <form data-form="grupo-criar" class="form-conta" novalidate>
           <label>Nome do grupo<input name="nome" maxlength="60" required placeholder="Ex.: Rumo à aprovação"></label>
           <p class="erro-form" data-erro hidden></p>
-          <button class="btn btn-ouro" type="submit">Criar grupo</button>
+          <button class="btn btn-ouro" type="submit">${acao('grupo', 'Criar grupo')}</button>
         </form></section>
       <section class="caixa"><h3>Recebi um convite</h3>
         <p>Abra o link que recebeu ou digite o código.</p>
@@ -912,7 +913,7 @@ export function paginaGrupo({ usuario, trilhas, almas, foco, membro, membros = [
           : !m.compartilhaTempo ? '<p class="vazio">Não compartilha o tempo de estudo.</p>'
           : `<div class="membro-streak">${px ? sprite('fogueira', { escala: 2 }) : ''}<b>${m.streak.atual}</b><span>${m.streak.atual === 1 ? 'dia seguido' : 'dias seguidos'}<br><small>recorde ${m.streak.recorde} · hoje ${m.streak.minutosHoje} min</small></span></div>
              ${mapaDias(m.mapa, `Dias de estudo de ${m.nome} nas últimas 12 semanas`)}`}
-        ${admin && !m.souEu ? `<button type="button" class="btn-x" data-acao-url="/api/grupo/remover" data-acao-corpo='{"id":${m.id}}' data-confirmar data-acao-msg="Membro removido do grupo.">Remover do grupo</button>` : ''}
+        ${admin && !m.souEu ? `<button type="button" class="btn-x" data-acao-url="/api/grupo/remover" data-acao-corpo='{"id":${m.id}}' data-confirmar data-acao-msg="Membro removido do grupo.">${acao('excluir', 'Remover do grupo')}</button>` : ''}
       </article>`).join('');
     corpo = `
     <section class="envolve grupo-topo">
@@ -930,21 +931,21 @@ export function paginaGrupo({ usuario, trilhas, almas, foco, membro, membros = [
             <div class="campos"><label class="cargo">Validade<select name="horas"><option value="24">24 horas</option><option value="72">3 dias</option><option value="168">7 dias</option></select></label>
             <label>Usos<select name="usos"><option value="1">1 pessoa</option><option value="3">3 pessoas</option><option value="5">5 pessoas</option></select></label></div>
             <p class="erro-form" data-erro hidden></p>
-            <button class="btn btn-ouro" type="submit">Gerar convite</button>
+            <button class="btn btn-ouro" type="submit">${acao('adicionar', 'Gerar convite')}</button>
           </form>
           <div class="convite-gerado" data-convite-gerado hidden>
             <p>Código: <b class="codigo" data-convite-codigo></b></p>
             <input readonly data-convite-link aria-label="Link do convite">
-            <button type="button" class="btn" data-copiar>Copiar link</button>
+            <button type="button" class="btn" data-copiar>${acao('copiar', 'Copiar link')}</button>
             <p class="ajuda">Quem não tem conta cria uma pelo link (com confirmação por e-mail). Também dá para digitar o código em <b>${esc(base)}/convite</b>.</p>
           </div>
           ${convites.length ? `<h4>Convites ativos</h4><ul class="ultimos">${convites.map((c) => `<li><span><b class="codigo">${esc(c.codigo)}</b> <small>até ${quando(c.expira)} · ${c.usos}/${c.usos_max} usos</small></span><span></span>
-            <button type="button" class="btn-x" data-acao-url="/api/grupo/convite/revogar" data-acao-corpo='{"codigo":"${esc(c.codigo)}"}' data-confirmar data-acao-msg="Convite revogado.">Revogar</button></li>`).join('')}</ul>` : ''}
+            <button type="button" class="btn-x" data-acao-url="/api/grupo/convite/revogar" data-acao-corpo='{"codigo":"${esc(c.codigo)}"}' data-confirmar data-acao-msg="Convite revogado.">${acao('fechar', 'Revogar')}</button></li>`).join('')}</ul>` : ''}
         </section>
         <section class="caixa"><h3>Seu compartilhamento</h3>
           <p>Tempo e dias: <b>${membro.compartilha_tempo ? 'sim' : 'não'}</b> · Trilha: <b>${membro.compartilha_trilha ? 'sim' : 'não'}</b> · Assunto: <b>${membro.compartilha_assunto ? 'sim' : 'não'}</b></p>
           <div class="foco-botoes"><a class="btn" href="/configuracoes#privacidade">Mudar</a>
-          <button type="button" class="btn-x" data-acao-url="/api/grupo/sair" data-confirmar data-acao-ir="/grupo">Sair do grupo</button></div>
+          <button type="button" class="btn-x" data-acao-url="/api/grupo/sair" data-confirmar data-acao-ir="/grupo">${acao('sair', 'Sair do grupo')}</button></div>
         </section>
       </aside>
     </div>`;
@@ -1077,7 +1078,7 @@ export function paginaEspacos({ usuario, trilhas, almas, foco, espacos, cores })
       <p class="lema">Monte as suas próprias trilhas: cada uma tem notas em Markdown com checklists, entra no pomodoro, no caderno e no streak.</p></section>
     <section class="envolve"><div class="cartoes">
       ${espacos.map((e) => `<a class="cartao caixa c-${esc(e.cor)}" href="/espaco/${e.id}">
-        <span class="cartao-topo">${px ? sprite('picareta', { escala: 3 }) : ''}<span class="cartao-nome">Trilha</span></span>
+        <span class="cartao-topo">${iconeUI('pasta')}<span class="cartao-nome">Trilha</span></span>
         <span class="mundo">${esc(e.nome)}</span><span class="cartao-linha">${esc(e.descricao || 'Sem descrição')}</span>
         <span class="barra-rot"><span>Progresso</span><b>${pctTxt(e.pct)}</b></span>${medidor(e.pct, { classe: 'tc', rotulo: `Progresso de ${e.nome}` })}
         <span class="cartao-pe">${e.feitas} de ${e.total} tarefas</span></a>`).join('')}
@@ -1088,7 +1089,7 @@ export function paginaEspacos({ usuario, trilhas, almas, foco, espacos, cores })
           ${seletorCor(cores, 'brasa')}
           <label class="opcao"><input type="checkbox" name="modelo" checked> <span>Começar com uma nota-modelo (objetivo, tarefas e recursos)</span></label>
           <p class="erro-form" data-erro hidden></p>
-          <button class="btn btn-ouro" type="submit">Criar trilha</button>
+          <button class="btn btn-ouro" type="submit">${acao('adicionar', 'Criar trilha')}</button>
         </form></section>
     </div></section>`,
   });
@@ -1110,20 +1111,20 @@ export function paginaEspaco({ usuario, trilhas, almas, foco, e, notas, cores, p
           <span class="nota-prog">${n.total ? `<b>${n.feitas}/${n.total}</b>${medidor((100 * n.feitas) / n.total, { classe: 'tc' })}` : '<small>sem tarefas</small>'}</span></a></li>`).join('') : '<li class="vazio">Nenhuma nota ainda.</li>'}</ul>
         <form data-form="espaco-nota" data-espaco="${e.id}" class="form-conta nova-nota" novalidate>
           <label>Nova nota<input name="titulo" maxlength="120" required placeholder="Título da nota"></label>
-          <p class="erro-form" data-erro hidden></p><button class="btn btn-ouro" type="submit">Criar e editar</button>
+          <p class="erro-form" data-erro hidden></p><button class="btn btn-ouro" type="submit">${acao('editar', 'Criar e editar')}</button>
         </form>
       </section>
       <aside class="lateral">
         <section class="caixa"><h3>Usar esta trilha</h3><div class="foco-botoes">
-          <a class="btn btn-ouro" href="/foco?trilha=e${e.id}">Começar um pomodoro</a><a class="btn" href="${linkAnotar(e.nome, '')}">Anotar no Sketchbook</a></div></section>
+          <a class="btn btn-ouro" href="/foco?trilha=e${e.id}">${acao('iniciar', 'Começar um pomodoro')}</a><a class="btn" href="${linkAnotar(e.nome, '')}">${acao('editar', 'Anotar no Sketchbook')}</a></div></section>
         <section class="caixa"><h3>Editar trilha</h3>
           <form data-form="espaco-editar" data-espaco="${e.id}" class="form-conta" novalidate>
             <label>Nome<input name="nome" maxlength="60" required value="${esc(e.nome)}"></label>
             <label>Descrição<input name="descricao" maxlength="240" value="${esc(e.descricao)}"></label>
             ${seletorCor(cores, e.cor)}
-            <p class="erro-form" data-erro hidden></p><button class="btn" type="submit">Salvar</button>
+            <p class="erro-form" data-erro hidden></p><button class="btn" type="submit">${acao('salvar', 'Salvar')}</button>
           </form>
-          <button type="button" class="btn-x" data-acao-url="/api/espaco/${e.id}/remover" data-confirmar data-acao-ir="/espaco">Apagar trilha e notas</button>
+          <button type="button" class="btn-x" data-acao-url="/api/espaco/${e.id}/remover" data-confirmar data-acao-ir="/espaco">${acao('excluir', 'Apagar trilha e notas')}</button>
         </section>
       </aside>
     </div>`,
@@ -1141,8 +1142,8 @@ export function paginaEspacoNota({ usuario, trilhas, almas, foco, e, n, html, to
       <div class="nota-acoes">
         ${n.total ? `<span class="barra-rot"><span><b data-feitas>${n.feitas}</b> de <b data-total>${n.total}</b> tarefas</span><b data-pct-txt>${pctTxt(pct)}</b></span>
         ${medidor(pct, { classe: 'tc', marca: ' data-nota-medidor' })}` : ''}
-        <div class="nota-botoes"><a class="btn btn-ouro" href="/espaco/${e.id}/nota/${n.id}/editar">Editar</a>
-          <a class="btn" href="/foco?trilha=e${e.id}&amp;assunto=${encodeURIComponent(n.titulo)}">Focar</a></div>
+        <div class="nota-botoes"><a class="btn btn-ouro" href="/espaco/${e.id}/nota/${n.id}/editar">${acao('editar', 'Editar')}</a>
+          <a class="btn" href="/foco?trilha=e${e.id}&amp;assunto=${encodeURIComponent(n.titulo)}">${acao('foco', 'Focar')}</a></div>
       </div>
     </div>
     <div class="nota-grade envolve${indice ? '' : ' sem-indice'}">${indice}
@@ -1157,14 +1158,14 @@ export function paginaEspacoNotaEditar({ usuario, trilhas, almas, foco, e, n }) 
     titulo: `Editar ${n.titulo}`, ativo: 'espaco', usuario, trilhas, almas, foco, classe: `pg-caderno-editor c-${esc(e.cor)}`,
     corpo: `
     <div class="caderno-editor envolve">
-      <div class="ed-topo"><a class="btn" href="/espaco/${e.id}/nota/${n.id}">← Voltar sem salvar</a><span class="ed-status"></span>
-        <span class="ed-acoes"><button type="button" class="btn-x" data-acao-url="/api/espaco/${e.id}/nota/${n.id}/remover" data-confirmar data-acao-ir="/espaco/${e.id}">Apagar nota</button></span></div>
+      <div class="ed-topo"><a class="btn" href="/espaco/${e.id}/nota/${n.id}">${acao('voltar', 'Voltar sem salvar')}</a><span class="ed-status"></span>
+        <span class="ed-acoes"><button type="button" class="btn-x" data-acao-url="/api/espaco/${e.id}/nota/${n.id}/remover" data-confirmar data-acao-ir="/espaco/${e.id}">${acao('excluir', 'Apagar nota')}</button></span></div>
       <form data-form="espaco-nota-salvar" data-espaco="${e.id}" data-nota="${n.id}" data-versao="${n.versao}" class="caixa ed-painel" novalidate>
         <input class="ed-titulo" name="titulo" maxlength="120" required value="${esc(n.titulo)}" aria-label="Título">
         <p class="ajuda">Markdown: <code>## Seção</code>, <code>- [ ] tarefa</code>, <code>**negrito**</code>, listas e links. As seções viram sugestões de assunto no pomodoro e no caderno.</p>
         <textarea class="ed-texto" name="texto" spellcheck="true" aria-label="Texto da nota">${esc(n.texto)}</textarea>
         <p class="erro-form" data-erro hidden></p>
-        <div class="foco-botoes"><button class="btn btn-ouro" type="submit">Salvar nota</button></div>
+        <div class="foco-botoes"><button class="btn btn-ouro" type="submit">${acao('salvar', 'Salvar nota')}</button></div>
       </form>
     </div>`,
   });
@@ -1182,7 +1183,7 @@ export function paginaConfiguracoes({ usuario, trilhas, almas, foco, conta, emai
           <td>${esc(x.perfil)}<br><small>${esc(nomePerfil(x.perfil))}</small></td>
           <td>${x.confirmacao_pendente ? 'aguardando e-mail' : x.trocar_senha ? 'senha provisória' : 'ativa'}</td>
           <td>${x.confirmacao_pendente ? `<button type="button" class="btn-x" data-acao-url="/api/conta/usuarios/confirmar" data-acao-corpo='{"id":${x.id}}' data-acao-msg="Conta confirmada.">Confirmar à mão</button>` : ''}
-            ${x.dono ? '' : `<button type="button" class="btn-x" data-acao-url="/api/conta/usuarios/remover" data-acao-corpo='{"id":${x.id}}' data-confirmar data-acao-msg="Conta removida.">Remover</button>`}</td></tr>`).join('')}
+            ${x.dono ? '' : `<button type="button" class="btn-x" data-acao-url="/api/conta/usuarios/remover" data-acao-corpo='{"id":${x.id}}' data-confirmar data-acao-msg="Conta removida.">${acao('excluir', 'Remover')}</button>`}</td></tr>`).join('')}
       </tbody></table></div>
       ${emailAtivo ? '' : '<p class="ajuda">O envio de e-mail não está configurado (SMTP no .env). Links de confirmação aparecem no log do serviço; use “Confirmar à mão” se precisar.</p>'}
     </section>
@@ -1213,7 +1214,7 @@ export function paginaConfiguracoes({ usuario, trilhas, almas, foco, conta, emai
           <label>Senha atual<input name="atual" type="password" autocomplete="current-password" required maxlength="200"></label>
           <label>Senha nova (mínimo de 10 caracteres)<input name="nova" type="password" autocomplete="new-password" required minlength="10" maxlength="200"></label>
           <label>Repita a senha nova<input name="confirmacao" type="password" autocomplete="new-password" required maxlength="200"></label>
-          <p class="erro-form" data-erro hidden></p><button class="btn btn-ouro" type="submit">Salvar senha</button>
+          <p class="erro-form" data-erro hidden></p><button class="btn btn-ouro" type="submit">${acao('salvar', 'Salvar senha')}</button>
         </form></section>
       ${usuario.trocarSenha ? '' : `
       <section class="caixa"><h3>Perfil</h3>
@@ -1222,7 +1223,7 @@ export function paginaConfiguracoes({ usuario, trilhas, almas, foco, conta, emai
           <label>@usuário<input name="arroba" maxlength="25" required value="${esc(conta.arroba || conta.usuario)}" spellcheck="false" autocapitalize="none"></label>
           <label>Senha atual (só para trocar o @)<input name="senha" type="password" autocomplete="current-password" maxlength="200"></label>
           <p class="ajuda">O @ é como as outras pessoas do grupo te veem e serve para entrar no site.</p>
-          <p class="erro-form" data-erro hidden></p><button class="btn" type="submit">Salvar perfil</button>
+          <p class="erro-form" data-erro hidden></p><button class="btn" type="submit">${acao('salvar', 'Salvar perfil')}</button>
         </form></section>
       <section class="caixa"><h3>E-mail</h3>
         <p>${conta.email ? `Atual: <b>${esc(conta.email)}</b> (confirmado)` : 'Nenhum e-mail confirmado.'}${emailPendente ? `<br>Aguardando confirmação: <b>${esc(emailPendente)}</b>` : ''}</p>
@@ -1230,7 +1231,7 @@ export function paginaConfiguracoes({ usuario, trilhas, almas, foco, conta, emai
           <label>${conta.email ? 'Trocar para' : 'Adicionar e-mail'}<input name="email" type="email" maxlength="200" required autocomplete="email"></label>
           <label>Senha atual<input name="senha" type="password" autocomplete="current-password" required maxlength="200"></label>
           <p class="ajuda">Enviamos um link para o e-mail novo; ele só passa a valer depois da confirmação.</p>
-          <p class="erro-form" data-erro hidden></p><button class="btn" type="submit">Enviar confirmação</button>
+          <p class="erro-form" data-erro hidden></p><button class="btn" type="submit">${acao('email', 'Enviar confirmação')}</button>
         </form></section>
       <section class="caixa"><h3>Aparência</h3>
         <form data-form="conta-tema" class="form-conta" novalidate>
@@ -1245,16 +1246,16 @@ export function paginaConfiguracoes({ usuario, trilhas, almas, foco, conta, emai
           <label class="opcao"><input type="checkbox" name="tempo"${membro.compartilha_tempo ? ' checked' : ''}> <span>Tempo e dias de estudo (streak, mapa, sessões)</span></label>
           <label class="opcao"><input type="checkbox" name="trilha"${membro.compartilha_trilha ? ' checked' : ''}> <span>Trilha de cada sessão</span></label>
           <label class="opcao"><input type="checkbox" name="assunto"${membro.compartilha_assunto ? ' checked' : ''}> <span>Assunto de cada sessão</span></label>
-          <p class="erro-form" data-erro hidden></p><button class="btn" type="submit">Salvar compartilhamento</button>
+          <p class="erro-form" data-erro hidden></p><button class="btn" type="submit">${acao('salvar', 'Salvar compartilhamento')}</button>
         </form>` : '<p>Você não participa de um grupo: nada é compartilhado.</p>'}
         <p class="ajuda">Cookies: só o essencial de sessão. <a href="/privacidade">Ler a política</a>.</p>
-        <div class="foco-botoes"><a class="btn" href="/configuracoes/meus-dados.json">Baixar meus dados (JSON)</a></div>
+        <div class="foco-botoes"><a class="btn" href="/configuracoes/meus-dados.json">${acao('baixar', 'Baixar meus dados (JSON)')}</a></div>
       </section>
       ${usuario.dono ? '' : `<section class="caixa"><h3>Excluir conta</h3>
         <p>Apaga sua conta e tudo o que você criou aqui (sessões, caderno, espaço). Não dá para desfazer.</p>
         <form data-form="conta-excluir" class="form-conta" novalidate>
           <label>Senha atual<input name="senha" type="password" autocomplete="current-password" required maxlength="200"></label>
-          <p class="erro-form" data-erro hidden></p><button class="btn-x" type="submit">Excluir minha conta</button>
+          <p class="erro-form" data-erro hidden></p><button class="btn-x" type="submit">${acao('excluir', 'Excluir minha conta')}</button>
         </form></section>`}
       ${gestao}`}
     </div>`,

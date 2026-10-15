@@ -1,0 +1,25 @@
+.icone-ui { display: inline-block; width: 20px; height: 20px; flex: none; vertical-align: middle; pointer-events: none; }
+.nav-icone { display: grid; place-items: center; width: 28px; height: 28px; flex: none; color: var(--tc); }
+.nav-icone .icone-ui { width: 22px; height: 22px; }
+.nav-item.ativa .nav-icone, .nav-item:hover .nav-icone { color: inherit; }
+.btn > .icone-ui, .btn-x > .icone-ui { width: 17px; height: 17px; }
+.btn-x:has(> .icone-ui), .conta-link { display: inline-flex; align-items: center; gap: 6px; }
+.btn > [data-rotulo], .btn-x > [data-rotulo] { min-width: 0; }
+.conta-link .icone-ui { width: 17px; height: 17px; }
+.nav-recolhida .conta-link { display: none; }
+.tema-pixel .icone-ui { stroke-width: 2; stroke-linecap: square; stroke-linejoin: miter; }
+.tema-pixel .nav-icone { color: var(--ouro-claro); }
+.tema-pixel .nav-item.ativa .nav-icone { color: var(--tc); }
+.cartao-topo { display: flex; align-items: center; gap: 10px; }
+.cartao-topo > .icone-ui { width: 32px; height: 32px; color: var(--tc); }
+.heroi-emblema > .icone-ui { width: 96px; height: 96px; color: var(--tc); }
+.nav-recolhida .navlat-recolher > .icone-ui { transform: scaleX(-1); }
+/* Traços leves acompanham a tipografia e os links do tema Wikipédia. */
+.tema-wikipedia .nav-icone .icone-ui { width: 20px; height: 20px; }
+.tema-wikipedia .cartao-topo > .icone-ui { width: 26px; height: 26px; }
+@media (max-width: 900px) {
+  .nav-recolhida .conta-link { display: inline-flex; }
+}
+@media (max-width: 680px) {
+  .heroi-emblema > .icone-ui { width: 64px; height: 64px; }
+}

@@ -1,0 +1,149 @@
+/* Enciclopédia: carregado após normal.css, somente para a família Wikipédia.
+   light-dark() mantém a paleta e os controles nativos no modo escolhido pela conta. */
+:root[data-wikipedia] { color-scheme: light dark; }
+:root[data-wikipedia="light"] { color-scheme: light; }
+:root[data-wikipedia="dark"] { color-scheme: dark; }
+.tema-wikipedia {
+  --bg: light-dark(#fff, #101418);
+  --surface: light-dark(#fff, #101418);
+  --surface-2: light-dark(#f8f9fa, #202122);
+  --ink: light-dark(#202122, #eaecf0);
+  --muted: light-dark(#54595d, #a2a9b1);
+  --line: light-dark(#a2a9b1, #54595d);
+  --wiki-link: light-dark(#36c, #88a3e8);
+  --wiki-highlight: light-dark(#eaf3ff, #233044);
+  --wiki-button: light-dark(#36c, #88a3e8);
+  --wiki-button-text: light-dark(#fff, #101418);
+  --bom: light-dark(#14866d, #5fddbd);
+  --ruim: light-dark(#b32424, #ff8585);
+  --aviso: light-dark(#805600, #f0c469);
+  --f: Arial, Helvetica, sans-serif;
+  --f-num: ui-monospace, "DejaVu Sans Mono", monospace;
+  --wiki-serif: "Linux Libertine", Georgia, "Times New Roman", serif;
+  font-size: 16px;
+  line-height: 1.65;
+}
+.tema-wikipedia, .tema-wikipedia :is([class*="t-"], [class*="c-"]) {
+  --tc: var(--wiki-link);
+  --tc-claro: var(--wiki-highlight);
+}
+.tema-wikipedia a { text-decoration: none; }
+.tema-wikipedia a:hover { text-decoration: underline; }
+.tema-wikipedia :focus-visible { outline: 2px solid var(--wiki-link); border-radius: 0; }
+.tema-wikipedia :is(.caixa, .btn, input, select, textarea, .tile, .modo span,
+  .nav-item, .nav-nota, .navlat-recolher, .navlat-fechar, .hamburguer,
+  .tag, .ev-trilha, .selo-secao, .chamado, .citacao, .foco-pilula, .ed-abas button,
+  .nota blockquote, .nota code, .nota .tarefa, .indice a, #aviso, #dica) {
+  border-radius: 2px;
+}
+.tema-wikipedia .caixa { box-shadow: none; }
+.tema-wikipedia .envolve { width: min(1200px, 100%); padding-inline: 40px; }
+.tema-wikipedia main { gap: 30px; padding-top: 40px; }
+.tema-wikipedia :is(.titulo-gotico, .titulo-morte, .titulo-secao, .nota h1, .nota h2, .texto-longo h2) {
+  font-family: var(--wiki-serif); font-weight: 400; letter-spacing: 0; line-height: 1.3;
+}
+.tema-wikipedia .titulo-gotico { font-size: clamp(29px, 3vw, 36px); }
+.tema-wikipedia .titulo-secao { font-size: 25px; padding-bottom: 5px; border-bottom: 1px solid var(--line); }
+.tema-wikipedia :is(.inicio-topo, .trilha-heroi, .conta-topo, .grupo-topo, .caderno-topo, .nota-cabeca) {
+  padding-bottom: 18px; border-bottom: 1px solid var(--line);
+}
+.tema-wikipedia :is(.eyebrow, .nav-grupo, .cartao-nome, .foco-tipo, .foco-fixo-tipo, .citacao-tipo, .ev-trilha) {
+  text-transform: none; letter-spacing: 0;
+}
+.tema-wikipedia .eyebrow { font-size: 14px; font-weight: 400; }
+.tema-wikipedia .casca { grid-template-columns: 224px minmax(0, 1fr); }
+.tema-wikipedia .navlat { border-right: 0; padding: 14px 8px 0 16px; }
+.tema-wikipedia .navlat-topo { padding: 10px 6px 24px; border: 0; }
+.tema-wikipedia .marca-txt { font: small-caps 30px/1.2 var(--wiki-serif); gap: 5px; }
+.tema-wikipedia .marca-std { color: var(--ink); font-weight: 400; }
+.tema-wikipedia .navlat-recolher { border: 0; }
+.tema-wikipedia .navlat-rolagem { padding: 0 8px 16px 0; }
+.tema-wikipedia .nav-grupo { margin: 20px 10px 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--ink); }
+.tema-wikipedia .nav-item { color: var(--wiki-link); font-size: 14px; font-weight: 400; min-height: 34px; padding-block: 4px; }
+.tema-wikipedia .nav-item.ativa { color: var(--ink); font-weight: 700; background: transparent; }
+.tema-wikipedia .nav-item:hover { background: var(--surface-2); }
+.tema-wikipedia .nav-medidor.medidor { height: 2px; margin: 2px 10px 8px; }
+.tema-wikipedia .nav-pct { font: 12px var(--f); }
+.tema-wikipedia .nav-rot { white-space: normal; overflow-wrap: anywhere; }
+.tema-wikipedia .nav-pct { flex: none; }
+.tema-wikipedia .nav-notas { margin-left: 10px; border-left-width: 1px; }
+.tema-wikipedia .nav-nota { color: var(--wiki-link); }
+.tema-wikipedia .nav-nota.atual { color: var(--ink); background: transparent; }
+.tema-wikipedia .navlat-pe { font-size: 13px; padding-inline: 10px; }
+.tema-wikipedia .conta-link { color: var(--wiki-link); }
+.tema-wikipedia :is(.medidor, .medidor i) { border-radius: 0; }
+.tema-wikipedia .medidor { height: 5px; background: var(--surface-2); }
+.tema-wikipedia .medidor.grande { height: 7px; }
+.tema-wikipedia .cartoes { gap: 16px; }
+.tema-wikipedia .cartao { border-top-width: 1px; padding: 16px 18px; background: var(--surface-2); }
+.tema-wikipedia .cartao:hover { text-decoration: none; }
+.tema-wikipedia .cartao:hover .mundo { text-decoration: underline; }
+.tema-wikipedia .mundo { font: 400 23px/1.3 var(--wiki-serif); color: var(--wiki-link); }
+.tema-wikipedia .cartao-nome { font-size: 13px; font-weight: 400; }
+.tema-wikipedia .numero { font: 400 48px/1.1 var(--wiki-serif); }
+.tema-wikipedia .numero-rotulo { font-size: 16px; font-weight: 400; }
+.tema-wikipedia .citacao { background: var(--surface-2); border-left-width: 3px; }
+.tema-wikipedia .citacao blockquote { font-family: var(--wiki-serif); }
+.tema-wikipedia :is(.lateral .caixa, .tile, .foco-painel, .mapa-grande) { background: var(--surface-2); }
+.tema-wikipedia .nota-titulo { color: var(--wiki-link); font-weight: 400; }
+.tema-wikipedia .btn { background: var(--surface-2); font-weight: 700; line-height: 1.3; }
+.tema-wikipedia .btn:hover { background: var(--wiki-highlight); text-decoration: none; filter: none; }
+.tema-wikipedia :is(.btn-ouro, .modo input:checked + span, .ed-abas button[aria-selected="true"]) {
+  background: var(--wiki-button); border-color: var(--wiki-button); color: var(--wiki-button-text);
+}
+.tema-wikipedia .btn-ouro:hover { filter: brightness(1.12); }
+.tema-wikipedia :is(input, select, textarea) { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+.tema-wikipedia :is(.avatar, .btn-x.confirmar, #aviso.erro) { color: var(--wiki-button-text); }
+.tema-wikipedia .nota-grade { grid-template-columns: 180px minmax(0, 1fr); gap: 30px; }
+.tema-wikipedia .nota-grade.sem-indice { grid-template-columns: minmax(0, 1fr); }
+.tema-wikipedia .indice { border: 0; padding: 0; }
+.tema-wikipedia .indice-rot { font-size: 14px; color: var(--ink); text-transform: none; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.tema-wikipedia .indice a { color: var(--wiki-link); font-weight: 400; }
+.tema-wikipedia .indice .n3 a { color: var(--wiki-link); }
+.tema-wikipedia .nota { border: 0; padding: 0 0 24px; font-size: 16px; line-height: 1.65; overflow-wrap: anywhere; }
+.tema-wikipedia .nota h1 { font-size: 32px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.tema-wikipedia .nota h2 { font-size: 25px; }
+.tema-wikipedia .nota h3 { font-size: 19px; }
+.tema-wikipedia .nota :is(p, li) { max-width: none; }
+.tema-wikipedia .nota :is(table, pre) { display: block; max-width: 100%; overflow-x: auto; }
+.tema-wikipedia .nota table { width: max-content; }
+.tema-wikipedia table { background: var(--surface-2); border: 1px solid var(--line); }
+.tema-wikipedia :is(th, td) { border: 1px solid var(--line); }
+.tema-wikipedia th { background: var(--wiki-highlight); color: var(--ink); font-size: 14px; }
+.tema-wikipedia .nota a.quebrado { color: var(--ruim); }
+.tema-wikipedia .foco-fixo { box-shadow: none; }
+.tema-wikipedia .rodape { margin-top: 12px; padding-top: 18px; text-align: left; border-top: 1px solid var(--line); }
+.tema-wikipedia :is(.conta-grade, .membros, .bau, .cartoes, .caderno-grade) { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.tema-wikipedia :is(.temas-lista, .conta-grade > *, .nota-cabeca > *, .trilha-heroi > *) { min-width: 0; }
+.tema-wikipedia .temas-lista { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 901px) {
+  .tema-wikipedia.nav-recolhida .casca { grid-template-columns: 68px minmax(0, 1fr); }
+  .tema-wikipedia.nav-recolhida .navlat { padding-inline: 4px; }
+  .tema-wikipedia.nav-recolhida .marca-txt { font-size: 22px; }
+}
+@media (max-width: 1100px) and (min-width: 901px) {
+  .tema-wikipedia .envolve { padding-inline: 24px; }
+  .tema-wikipedia .nota-grade { grid-template-columns: minmax(0, 1fr); }
+  .tema-wikipedia .indice { position: static; max-height: none; }
+}
+@media (max-width: 900px) {
+  .tema-wikipedia .casca { display: block; }
+  .tema-wikipedia .envolve { padding-inline: 24px; }
+  .tema-wikipedia main { padding-top: 24px; }
+  .tema-wikipedia .navlat { padding: 14px 12px; }
+  .tema-wikipedia .nav-item { min-height: 44px; }
+  .tema-wikipedia .topo-movel .marca-txt { font-size: 25px; }
+  .tema-wikipedia .nota-grade { grid-template-columns: minmax(0, 1fr); }
+  .tema-wikipedia .indice { padding: 12px; border: 1px solid var(--line); background: var(--surface-2); }
+}
+@media (max-width: 540px) {
+  .tema-wikipedia .envolve { padding-inline: 16px; }
+  .tema-wikipedia .titulo-gotico { font-size: 29px; }
+  .tema-wikipedia .nota-acoes { grid-template-columns: minmax(0, 1fr); width: 100%; }
+  .tema-wikipedia :is(.campos, .campos-foco) { grid-template-columns: minmax(0, 1fr); }
+  .tema-wikipedia .campos .cargo { grid-column: auto; }
+  .tema-wikipedia .foco-fixo-acoes { flex-wrap: wrap; }
+  .tema-wikipedia .eventos li { display: flex; flex-wrap: wrap; }
+  .tema-wikipedia .eventos .ev-txt { flex: 1 1 160px; }
+  .tema-wikipedia .texto-longo { padding: 16px; }
+}

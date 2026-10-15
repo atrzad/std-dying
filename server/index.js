@@ -599,6 +599,11 @@ app.post('/api/convite/aceitar', (req, res) => {
 
 // ---------- meu espaço ----------
 
+const idDaRota = (req) => {
+  if (!/^\d{1,12}$/.test(req.params.id)) throw new ErroHttp(404, 'Trilha não encontrada.');
+  return Number(req.params.id);
+};
+
 app.get('/espaco', async (req, res) => {
   const u = req.usuario;
   const espacos = espaco.listarEspacos(u.id).map((e) => ({ ...e, ...espaco.progressoDoEspaco(u.id, e.id) }));
